@@ -13,3 +13,4 @@ module "zimaos" {
   network_bridge = "vmbr0"
   on_boot        = true
 }
+
