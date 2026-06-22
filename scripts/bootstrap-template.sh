@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Restaura golden image do S3 e converte em template no Proxmox
-# Requer: SSH do runner para o host Proxmox + AWS credentials
+# O download é feito diretamente no host (evita encher o runner)
 
 PROXMOX_HOST="${PROXMOX_HOST:-10.0.0.80}"
 TEMPLATE_VMID="${TEMPLATE_VMID:-105}"
@@ -17,13 +17,16 @@ fi
 
 echo "Template $TEMPLATE_VMID não encontrado. Restaurando do S3..."
 
-# Baixar do S3 para o host Proxmox via runner como intermediário
-aws s3 cp "$S3_PATH" /tmp/zimaos-base.vma.zst
-scp /tmp/zimaos-base.vma.zst root@"$PROXMOX_HOST":"$REMOTE_TMP"
-rm /tmp/zimaos-base.vma.zst
-
-# Restaurar e converter em template
+# Instalar AWS CLI no host se não existir, e baixar direto
 ssh root@"$PROXMOX_HOST" "
+  export AWS_ACCESS_KEY_ID='$AWS_ACCESS_KEY_ID'
+  export AWS_SECRET_ACCESS_KEY='$AWS_SECRET_ACCESS_KEY'
+  export AWS_DEFAULT_REGION='${AWS_REGION:-us-east-1}'
+
+  # Baixar do S3
+  /usr/local/bin/aws s3 cp $S3_PATH $REMOTE_TMP
+
+  # Restaurar e converter em template
   qmrestore $REMOTE_TMP $TEMPLATE_VMID --storage local-lvm
   qm template $TEMPLATE_VMID
   rm $REMOTE_TMP
