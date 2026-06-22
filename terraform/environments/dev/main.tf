@@ -12,5 +12,6 @@ module "zimaos" {
   iso_file_id    = "local:iso/zimaos-1.6.1.iso"
   network_bridge = "vmbr0"
   on_boot        = true
+  bios           = "ovmf"
 }
 

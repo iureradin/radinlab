@@ -48,3 +48,8 @@ variable "on_boot" {
   type    = bool
   default = true
 }
+
+variable "bios" {
+  type    = string
+  default = "seabios"
+}

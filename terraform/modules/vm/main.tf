@@ -11,6 +11,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   vm_id     = var.vm_id
   name      = var.name
   on_boot   = var.on_boot
+  bios      = var.bios
 
   cpu {
     cores = var.cpu_cores
@@ -19,6 +20,13 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   memory {
     dedicated = var.memory
+  }
+
+  dynamic "efi_disk" {
+    for_each = var.bios == "ovmf" ? [1] : []
+    content {
+      datastore_id = var.datastore_id
+    }
   }
 
   cdrom {
