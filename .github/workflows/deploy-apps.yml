@@ -36,6 +36,10 @@ jobs:
             sleep 10
           done
 
+      - name: Snapshot before deploy
+        run: |
+          ssh root@$PROXMOX_HOST "qm snapshot 106 pre-deploy-\$(date +%s) --description 'Auto: before app deploy'" || true
+
       - name: Copy compose to ZimaOS
         run: scp -o StrictHostKeyChecking=accept-new docker/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/docker-compose.yml
 
