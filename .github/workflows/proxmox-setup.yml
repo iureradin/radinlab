@@ -2,7 +2,6 @@ name: Proxmox Post-Install
 on:
   workflow_dispatch:
   push:
-    paths: ['ansible/**']
 jobs:
   configure:
     runs-on: [self-hosted, dev]
