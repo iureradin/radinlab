@@ -1,0 +1,31 @@
+name: Terraform Deploy (Dev)
+on:
+  workflow_dispatch:
+  push:
+    paths: ['terraform/**']
+jobs:
+  deploy:
+    runs-on: [self-hosted, dev]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_VAR_proxmox_endpoint: "https://10.0.0.80:8006"
+      TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap S3 backend
+        run: bash scripts/bootstrap-s3.sh
+
+      - name: Terraform Init
+        working-directory: terraform/environments/dev
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform/environments/dev
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: terraform/environments/dev
+        run: terraform apply -auto-approve tfplan
