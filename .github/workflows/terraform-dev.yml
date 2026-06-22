@@ -31,10 +31,6 @@ jobs:
         working-directory: terraform/environments/dev
         run: terraform init
 
-      - name: Clean stale state
-        working-directory: terraform/environments/dev
-        run: terraform state rm module.zimaos.proxmox_virtual_environment_vm.this 2>/dev/null || true
-
       - name: Terraform Plan
         working-directory: terraform/environments/dev
         run: terraform plan -out=tfplan
