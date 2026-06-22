@@ -16,6 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID length: ${#AWS_ACCESS_KEY_ID}"
+          echo "AWS_SECRET_ACCESS_KEY length: ${#AWS_SECRET_ACCESS_KEY}"
+          echo "AWS_REGION: $AWS_REGION"
+          aws sts get-caller-identity
+
       - name: Bootstrap S3 backend
         run: bash scripts/bootstrap-s3.sh
 
