@@ -2,6 +2,6 @@ name: Test Runner
 on: push
 jobs:
   hello:
-    runs-on: self-hosted
+    runs-on: [self-hosted, dev]
     steps:
       - run: echo "Runner funcionando! 🎉"
