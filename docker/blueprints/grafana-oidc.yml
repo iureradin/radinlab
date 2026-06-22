@@ -1,0 +1,25 @@
+version: 1
+metadata:
+  name: Grafana OIDC Provider
+entries:
+  - model: authentik_providers_oauth2.oauth2provider
+    id: grafana-provider
+    attrs:
+      name: Grafana
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      client_type: confidential
+      client_id: grafana-0edf664f8ab80b2d
+      client_secret: !Env [GRAFANA_OIDC_SECRET]
+      redirect_uris: |
+        http://10.0.0.140:3000/login/generic_oauth
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+
+  - model: authentik_core.application
+    attrs:
+      name: Grafana
+      slug: grafana
+      provider: !KeyOf grafana-provider
+      meta_launch_url: http://10.0.0.140:3000
