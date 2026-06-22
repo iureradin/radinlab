@@ -53,3 +53,8 @@ variable "bios" {
   type    = string
   default = "seabios"
 }
+
+variable "agent_enabled" {
+  type    = bool
+  default = true
+}

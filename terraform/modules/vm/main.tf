@@ -13,6 +13,10 @@ resource "proxmox_virtual_environment_vm" "this" {
   on_boot   = var.on_boot
   bios      = var.bios
 
+  agent {
+    enabled = var.agent_enabled
+  }
+
   cpu {
     cores = var.cpu_cores
     type  = "host"
