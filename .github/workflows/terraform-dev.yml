@@ -13,7 +13,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
       AWS_REGION: ${{ vars.AWS_REGION }}
-      TF_VAR_proxmox_endpoint: "https://10.0.0.80:8006"
+      TF_VAR_proxmox_endpoint: ${{ vars.PROXMOX_ENDPOINT }}
       TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4

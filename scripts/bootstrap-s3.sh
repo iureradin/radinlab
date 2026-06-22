@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUCKET="radinlab-terraform-state"
-REGION="${AWS_REGION:-sa-east-1}"
+REGION="${AWS_REGION:?AWS_REGION not set}"
 
 # Verifica se o bucket já existe
 if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
