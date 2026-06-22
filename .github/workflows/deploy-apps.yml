@@ -1,0 +1,32 @@
+name: Deploy Apps
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Terraform Deploy (Dev)"]
+    types: [completed]
+jobs:
+  deploy:
+    runs-on: [self-hosted, dev]
+    environment: dev
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      ZIMAOS_HOST: "10.0.0.142"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose to ZimaOS
+        run: scp -o StrictHostKeyChecking=accept-new docker/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/docker-compose.yml
+
+      - name: Deploy apps
+        run: |
+          ssh root@$ZIMAOS_HOST "
+            cd /DATA/storage1
+            export AUTHENTIK_SECRET_KEY='${{ secrets.AUTHENTIK_SECRET_KEY }}'
+            export AUTHENTIK_DB_PASSWORD='${{ secrets.AUTHENTIK_DB_PASSWORD }}'
+            docker compose up -d --remove-orphans
+          "
+
+      - name: Wait and health check
+        run: |
+          sleep 30
+          ssh root@$ZIMAOS_HOST "docker ps --format '{{.Names}} {{.Status}}' | grep authentik"

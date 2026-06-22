@@ -1,0 +1,125 @@
+name: authentik
+services:
+  server:
+    image: ghcr.io/goauthentik/server:2026.2.2
+    container_name: authentik-server
+    command: server
+    depends_on:
+      - db
+      - redis
+    environment:
+      - AUTHENTIK_POSTGRESQL__HOST=authentik-db
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_REDIS__HOST=authentik-redis
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - /DATA/storage1/authentik/media:/media
+      - /DATA/storage1/authentik/templates:/templates
+    restart: unless-stopped
+    networks:
+      - authentik
+    labels:
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/authentik.png
+    x-casaos:
+      envs:
+        - container: AUTHENTIK_SECRET_KEY
+          description:
+            en_us: "Secret key for signing tokens"
+      ports:
+        - container: "9000"
+          description:
+            en_us: "HTTP Web UI"
+        - container: "9443"
+          description:
+            en_us: "HTTPS Web UI"
+      volumes:
+        - container: /media
+          description:
+            en_us: "Media files"
+        - container: /templates
+          description:
+            en_us: "Custom templates"
+
+  worker:
+    image: ghcr.io/goauthentik/server:2026.2.2
+    container_name: authentik-worker
+    command: worker
+    depends_on:
+      - db
+      - redis
+    environment:
+      - AUTHENTIK_POSTGRESQL__HOST=authentik-db
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_REDIS__HOST=authentik-redis
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
+    volumes:
+      - /DATA/storage1/authentik/media:/media
+      - /DATA/storage1/authentik/templates:/templates
+      - /DATA/storage1/authentik/certs:/certs
+    restart: unless-stopped
+    networks:
+      - authentik
+    labels:
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/authentik.png
+
+  db:
+    image: postgres:16-alpine
+    container_name: authentik-db
+    environment:
+      - POSTGRES_DB=authentik
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+    volumes:
+      - /DATA/storage1/authentik/db:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - authentik
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: authentik-redis
+    command: --save 60 1 --loglevel warning
+    volumes:
+      - /DATA/storage1/authentik/redis:/data
+    restart: unless-stopped
+    networks:
+      - authentik
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+networks:
+  authentik:
+    driver: bridge
+
+x-casaos:
+  architectures:
+    - amd64
+  main: server
+  author: RadinLab
+  category: Identity
+  description:
+    en_us: Identity provider with SSO, OIDC, LDAP. Single login for all apps.
+  developer: Authentik
+  icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/authentik.png
+  tagline:
+    en_us: Single Sign-On for your homelab
+  title:
+    en_us: Authentik
+  port_map: "9000"
+  index: /
+  scheme: http
