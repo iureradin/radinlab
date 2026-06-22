@@ -9,10 +9,14 @@ if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
   echo "Bucket $BUCKET já existe, seguindo..."
 else
   echo "Criando bucket $BUCKET na região $REGION..."
-  aws s3api create-bucket \
-    --bucket "$BUCKET" \
-    --region "$REGION" \
-    --create-bucket-configuration LocationConstraint="$REGION"
+  if [ "$REGION" = "us-east-1" ]; then
+    aws s3api create-bucket --bucket "$BUCKET" --region "$REGION"
+  else
+    aws s3api create-bucket \
+      --bucket "$BUCKET" \
+      --region "$REGION" \
+      --create-bucket-configuration LocationConstraint="$REGION"
+  fi
 
   # Habilitar versionamento (para recuperar states anteriores)
   aws s3api put-bucket-versioning \
