@@ -11,23 +11,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     env:
       PROXMOX_HOST: "10.0.0.80"
-      ZIMAOS_MAC: "bc:24:11:aa:bb:cc"
+      ZIMAOS_HOST: "10.0.0.140"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Discover ZimaOS IP
-        run: |
-          echo "Waiting for VM to boot..."
-          for i in $(seq 1 12); do
-            IP=$(ssh -o StrictHostKeyChecking=accept-new root@$PROXMOX_HOST "ip neigh show | grep '$ZIMAOS_MAC' | awk '{print \$1}'" 2>/dev/null)
-            if [ -n "$IP" ]; then
-              echo "ZIMAOS_HOST=$IP" >> $GITHUB_ENV
-              echo "Found ZimaOS at $IP"
-              break
-            fi
-            sleep 10
-          done
-          if [ -z "$IP" ]; then echo "ERROR: Could not find ZimaOS IP" && exit 1; fi
 
       - name: Wait for SSH
         run: |
