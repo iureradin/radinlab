@@ -21,11 +21,10 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = var.memory
   }
 
-  disk {
-    datastore_id = var.datastore_id
-    file_id      = var.iso_file_id
-    interface    = "ide2"
-    size         = 0
+  cdrom {
+    enabled   = true
+    file_id   = var.iso_file_id
+    interface = "ide2"
   }
 
   disk {
