@@ -1,0 +1,41 @@
+- hosts: dell
+  tasks:
+    - name: Desabilitar repo enterprise
+      replace:
+        path: /etc/apt/sources.list.d/pve-enterprise.sources
+        regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
+        replace: '#\1'
+
+    - name: Desabilitar repo Ceph enterprise
+      replace:
+        path: /etc/apt/sources.list.d/ceph.sources
+        regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
+        replace: '#\1'
+
+    - name: Adicionar repo no-subscription
+      copy:
+        dest: /etc/apt/sources.list.d/pve-no-subscription.sources
+        content: |
+          Types: deb
+          URIs: http://download.proxmox.com/debian/pve
+          Suites: trixie
+          Components: pve-no-subscription
+          Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+
+    - name: Remover nag de subscription
+      replace:
+        path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        regexp: 'Ext\.Msg\.show\(\{'
+        replace: 'void({'
+      notify: restart pveproxy
+
+    - name: Atualizar pacotes
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+  handlers:
+    - name: restart pveproxy
+      service:
+        name: pveproxy
+        state: restarted

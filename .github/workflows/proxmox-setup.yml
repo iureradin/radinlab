@@ -1,0 +1,11 @@
+name: Proxmox Post-Install
+on:
+  workflow_dispatch:
+  push:
+    paths: ['ansible/**']
+jobs:
+  configure:
+    runs-on: [self-hosted, dev]
+    steps:
+      - uses: actions/checkout@v4
+      - run: ansible-playbook -i ansible/inventory/dev.yml ansible/playbooks/proxmox-postinstall.yml
