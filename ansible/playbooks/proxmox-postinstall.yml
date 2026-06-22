@@ -23,10 +23,18 @@
           Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
 
     - name: Remover nag de subscription
-      replace:
-        path: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
-        regexp: 'Ext\.Msg\.show\(\{'
-        replace: 'void({'
+      shell: |
+        FILE=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        if grep -q "gettext('No valid subscription')" "$FILE" && ! grep -B1 "No valid subscription" "$FILE" | grep -q void; then
+          LINE=$(grep -n "No valid subscription" "$FILE" | head -1 | cut -d: -f1)
+          PREV=$((LINE - 1))
+          sed -i "${PREV}s/Ext.Msg.show/void/" "$FILE"
+          echo changed
+        else
+          echo ok
+        fi
+      register: nag_result
+      changed_when: "'changed' in nag_result.stdout"
       notify: restart pveproxy
 
     - name: Atualizar pacotes
