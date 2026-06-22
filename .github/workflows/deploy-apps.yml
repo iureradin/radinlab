@@ -26,18 +26,33 @@ jobs:
         run: |
           ssh root@$PROXMOX_HOST "qm snapshot 106 pre-deploy-\$(date +%s) --description 'Auto: before app deploy'" || true
 
-      - name: Copy compose to ZimaOS
+      - name: Cleanup old compose
         run: |
-          scp -o StrictHostKeyChecking=accept-new docker/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/docker-compose.yml
-          ssh root@$ZIMAOS_HOST "mkdir -p /DATA/storage1/authentik/blueprints"
+          ssh root@$ZIMAOS_HOST "
+            cd /DATA/storage1 && docker compose down --remove-orphans 2>/dev/null || true
+            docker network rm authentik_authentik 2>/dev/null || true
+            rm -f /DATA/storage1/docker-compose.yml
+            mkdir -p /DATA/storage1/grafana && chown 472:472 /DATA/storage1/grafana
+          "
+
+      - name: Copy compose files to ZimaOS
+        run: |
+          ssh root@$ZIMAOS_HOST "mkdir -p /DATA/storage1/{authentik,grafana}/deploy /DATA/storage1/authentik/blueprints"
+          scp docker/authentik/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/deploy/docker-compose.yml
+          scp docker/grafana/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/grafana/deploy/docker-compose.yml
           scp docker/blueprints/*.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/blueprints/
 
       - name: Deploy apps
         run: |
           ssh root@$ZIMAOS_HOST "
-            cd /DATA/storage1
+            # Authentik
+            cd /DATA/storage1/authentik/deploy
             export AUTHENTIK_SECRET_KEY='${{ secrets.AUTHENTIK_SECRET_KEY }}'
             export AUTHENTIK_DB_PASSWORD='${{ secrets.AUTHENTIK_DB_PASSWORD }}'
+            docker compose up -d --remove-orphans
+
+            # Grafana (depends on radinlab network created by authentik)
+            cd /DATA/storage1/grafana/deploy
             export GRAFANA_OIDC_SECRET='${{ secrets.GRAFANA_OIDC_SECRET }}'
             docker compose up -d --remove-orphans
           "

@@ -24,6 +24,7 @@ services:
     restart: unless-stopped
     networks:
       - authentik
+      - radinlab
     labels:
       icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/authentik.png
     x-casaos:
@@ -38,16 +39,6 @@ services:
         - container: "9443"
           description:
             en_us: "HTTPS Web UI"
-      volumes:
-        - container: /media
-          description:
-            en_us: "Media files"
-        - container: /templates
-          description:
-            en_us: "Custom templates"
-        - container: /blueprints/custom
-          description:
-            en_us: "Custom blueprints"
 
   worker:
     image: ghcr.io/goauthentik/server:2026.2.2
@@ -106,42 +97,11 @@ services:
       timeout: 3s
       retries: 5
 
-  grafana:
-    image: grafana/grafana:11.6.0
-    container_name: grafana
-    environment:
-      - GF_SERVER_ROOT_URL=http://10.0.0.140:3000
-      - GF_AUTH_GENERIC_OAUTH_ENABLED=true
-      - GF_AUTH_GENERIC_OAUTH_NAME=Authentik
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_ID=grafana-0edf664f8ab80b2d
-      - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GRAFANA_OIDC_SECRET}
-      - GF_AUTH_GENERIC_OAUTH_SCOPES=openid email profile
-      - GF_AUTH_GENERIC_OAUTH_AUTH_URL=http://10.0.0.140:9000/application/o/authorize/
-      - GF_AUTH_GENERIC_OAUTH_TOKEN_URL=http://10.0.0.140:9000/application/o/token/
-      - GF_AUTH_GENERIC_OAUTH_API_URL=http://10.0.0.140:9000/application/o/userinfo/
-      - GF_AUTH_SIGNOUT_REDIRECT_URL=http://10.0.0.140:9000/application/o/grafana/end-session/
-      - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups[*], 'admin') && 'Admin' || 'Viewer'
-    ports:
-      - "3000:3000"
-    volumes:
-      - /DATA/storage1/grafana:/var/lib/grafana
-    restart: unless-stopped
-    networks:
-      - authentik
-    labels:
-      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/grafana.png
-    x-casaos:
-      ports:
-        - container: "3000"
-          description:
-            en_us: "Grafana Web UI"
-      volumes:
-        - container: /var/lib/grafana
-          description:
-            en_us: "Grafana data"
-
 networks:
   authentik:
+    driver: bridge
+  radinlab:
+    name: radinlab
     driver: bridge
 
 x-casaos:
