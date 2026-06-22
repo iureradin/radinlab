@@ -11,6 +11,7 @@ module "zimaos" {
   datastore_id   = "local-lvm"
   iso_file_id    = "local:iso/zimaos-1.6.1.iso"
   network_bridge = "vmbr0"
+  agent_enabled  = false # ZimaOS não suporta qemu-guest-agent
   on_boot        = true
   bios           = "ovmf"
 }
