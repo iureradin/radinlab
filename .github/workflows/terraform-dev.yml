@@ -1,11 +1,14 @@
 name: Terraform Deploy (Dev)
 on:
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: ["Proxmox Post-Install"]
+    types: [completed]
 jobs:
   deploy:
     runs-on: [self-hosted, dev]
     environment: dev
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
