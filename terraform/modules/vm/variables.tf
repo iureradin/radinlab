@@ -36,7 +36,13 @@ variable "datastore_id" {
 }
 
 variable "iso_file_id" {
-  type = string
+  type    = string
+  default = null
+}
+
+variable "clone_vm_id" {
+  type    = number
+  default = null
 }
 
 variable "network_bridge" {

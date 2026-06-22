@@ -21,9 +21,19 @@ jobs:
       - name: Bootstrap S3 backend
         run: bash scripts/bootstrap-s3.sh
 
+      - name: Bootstrap VM template
+        env:
+          PROXMOX_HOST: "10.0.0.80"
+          TEMPLATE_VMID: "105"
+        run: bash scripts/bootstrap-template.sh
+
       - name: Terraform Init
         working-directory: terraform/environments/dev
         run: terraform init
+
+      - name: Clean stale state
+        working-directory: terraform/environments/dev
+        run: terraform state rm module.zimaos.proxmox_virtual_environment_vm.this 2>/dev/null || true
 
       - name: Terraform Plan
         working-directory: terraform/environments/dev

@@ -17,6 +17,14 @@ resource "proxmox_virtual_environment_vm" "this" {
     enabled = var.agent_enabled
   }
 
+  dynamic "clone" {
+    for_each = var.clone_vm_id != null ? [1] : []
+    content {
+      vm_id = var.clone_vm_id
+      full  = true
+    }
+  }
+
   cpu {
     cores = var.cpu_cores
     type  = "host"
@@ -26,30 +34,36 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = var.memory
   }
 
-  dynamic "efi_disk" {
-    for_each = var.bios == "ovmf" ? [1] : []
+  dynamic "cdrom" {
+    for_each = var.iso_file_id != null ? [1] : []
     content {
-      datastore_id = var.datastore_id
+      file_id   = var.iso_file_id
+      interface = "ide2"
     }
   }
 
-  cdrom {
-    file_id   = var.iso_file_id
-    interface = "ide2"
-  }
-
-  disk {
-    datastore_id = var.datastore_id
-    interface    = "scsi0"
-    size         = var.disk_os_size
+  dynamic "disk" {
+    for_each = var.clone_vm_id == null ? [1] : []
+    content {
+      datastore_id = var.datastore_id
+      interface    = "scsi0"
+      size         = var.disk_os_size
+    }
   }
 
   dynamic "disk" {
-    for_each = var.disk_data_size > 0 ? [1] : []
+    for_each = var.clone_vm_id == null && var.disk_data_size > 0 ? [1] : []
     content {
       datastore_id = var.datastore_id
       interface    = "scsi1"
       size         = var.disk_data_size
+    }
+  }
+
+  dynamic "efi_disk" {
+    for_each = var.bios == "ovmf" && var.clone_vm_id == null ? [1] : []
+    content {
+      datastore_id = var.datastore_id
     }
   }
 
