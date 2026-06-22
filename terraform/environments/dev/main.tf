@@ -11,6 +11,7 @@ module "zimaos" {
   disk_data_size = 40
   datastore_id   = "local-lvm"
   network_bridge = "vmbr0"
+  mac_address    = "BC:24:11:AA:BB:CC"
   on_boot        = true
   bios           = "ovmf"
   agent_enabled  = false

@@ -50,6 +50,11 @@ variable "network_bridge" {
   default = "vmbr0"
 }
 
+variable "mac_address" {
+  type    = string
+  default = null
+}
+
 variable "on_boot" {
   type    = bool
   default = true

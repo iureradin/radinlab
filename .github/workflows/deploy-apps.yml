@@ -10,9 +10,31 @@ jobs:
     environment: dev
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     env:
-      ZIMAOS_HOST: "10.0.0.142"
+      PROXMOX_HOST: "10.0.0.80"
+      ZIMAOS_MAC: "bc:24:11:aa:bb:cc"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Discover ZimaOS IP
+        run: |
+          echo "Waiting for VM to boot..."
+          for i in $(seq 1 12); do
+            IP=$(ssh -o StrictHostKeyChecking=accept-new root@$PROXMOX_HOST "ip neigh show | grep '$ZIMAOS_MAC' | awk '{print \$1}'" 2>/dev/null)
+            if [ -n "$IP" ]; then
+              echo "ZIMAOS_HOST=$IP" >> $GITHUB_ENV
+              echo "Found ZimaOS at $IP"
+              break
+            fi
+            sleep 10
+          done
+          if [ -z "$IP" ]; then echo "ERROR: Could not find ZimaOS IP" && exit 1; fi
+
+      - name: Wait for SSH
+        run: |
+          for i in $(seq 1 6); do
+            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new root@$ZIMAOS_HOST "hostname" && break
+            sleep 10
+          done
 
       - name: Copy compose to ZimaOS
         run: scp -o StrictHostKeyChecking=accept-new docker/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/docker-compose.yml
