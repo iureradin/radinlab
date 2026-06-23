@@ -4,6 +4,7 @@ services:
     image: ghcr.io/goauthentik/server:2026.2.2
     container_name: authentik-server
     command: server
+    mem_limit: 1g
     depends_on:
       - db
       - redis
@@ -44,6 +45,7 @@ services:
     image: ghcr.io/goauthentik/server:2026.2.2
     container_name: authentik-worker
     command: worker
+    mem_limit: 768m
     depends_on:
       - db
       - redis
@@ -67,6 +69,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: authentik-db
+    mem_limit: 256m
     environment:
       - POSTGRES_DB=authentik
       - POSTGRES_USER=authentik
@@ -85,6 +88,7 @@ services:
   redis:
     image: redis:8-alpine
     container_name: authentik-redis
+    mem_limit: 64m
     command: --save 60 1 --loglevel warning
     volumes:
       - /DATA/storage1/authentik/redis:/data

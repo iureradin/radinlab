@@ -6,7 +6,7 @@ module "zimaos" {
   name           = "zimaos"
   clone_vm_id    = 105
   cpu_cores      = 2
-  memory         = 4096
+  memory         = 8192
   disk_os_size   = 30
   disk_data_size = 40
   datastore_id   = "local-lvm"

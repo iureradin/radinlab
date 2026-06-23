@@ -4,6 +4,7 @@ services:
     image: grafana/grafana:11.6.0
     container_name: grafana
     user: "472:472"
+    mem_limit: 128m
     environment:
       - GF_SERVER_ROOT_URL=http://10.0.0.140:3000
       - GF_AUTH_GENERIC_OAUTH_ENABLED=true
