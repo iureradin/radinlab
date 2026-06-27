@@ -17,8 +17,8 @@ services:
       - GF_AUTH_GENERIC_OAUTH_API_URL=http://authentik-server:9000/application/o/userinfo/
       - GF_AUTH_SIGNOUT_REDIRECT_URL=http://10.0.0.140:9000/application/o/grafana/end-session/
       - GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH=contains(groups[*], 'admin') && 'Admin' || 'Viewer'
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     volumes:
       - /DATA/storage1/grafana:/var/lib/grafana
     restart: unless-stopped

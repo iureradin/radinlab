@@ -15,9 +15,9 @@ services:
       - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
       - AUTHENTIK_REDIS__HOST=authentik-redis
       - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
-    expose:
-      - "9000"
-      - "9443"
+    ports:
+      - "9000:9000"
+      - "9443:9443"
     volumes:
       - /DATA/storage1/authentik/media:/media
       - /DATA/storage1/authentik/templates:/templates
