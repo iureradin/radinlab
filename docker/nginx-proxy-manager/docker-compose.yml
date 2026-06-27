@@ -1,0 +1,51 @@
+name: nginx-proxy-manager
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:2.12.3
+    container_name: nginx-proxy-manager
+    mem_limit: 256m
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - /DATA/storage1/npm/data:/data
+      - /DATA/storage1/npm/letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+    networks:
+      - radinlab
+    labels:
+      icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/nginx-proxy-manager.png
+    x-casaos:
+      ports:
+        - container: "80"
+          description:
+            en_us: "HTTP"
+        - container: "443"
+          description:
+            en_us: "HTTPS"
+        - container: "81"
+          description:
+            en_us: "Admin Panel"
+
+networks:
+  radinlab:
+    external: true
+
+x-casaos:
+  architectures:
+    - amd64
+  main: npm
+  author: RadinLab
+  category: Network
+  description:
+    en_us: Reverse proxy with SSL management and web UI.
+  developer: jc21
+  icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/nginx-proxy-manager.png
+  tagline:
+    en_us: Reverse Proxy & SSL Manager
+  title:
+    en_us: Nginx Proxy Manager
+  port_map: "81"
+  index: /
+  scheme: http
