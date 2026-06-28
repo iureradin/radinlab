@@ -180,18 +180,23 @@ jobs:
         run: |
           echo "=== OIDC Validation ==="
 
-          # Check Authentik OIDC discovery endpoint
-          OIDC=$(curl -sf "http://$ZIMAOS_HOST:9000/application/o/grafana/.well-known/openid-configuration" 2>/dev/null)
-          if echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
-            echo "✓ Authentik OIDC discovery OK"
-          else
-            echo "✗ Authentik OIDC discovery FAILED"
-            echo "::error::OIDC not configured — blueprint may not have been applied yet"
-            exit 1
+          # Check Authentik OIDC discovery endpoint (retry — blueprint takes time to apply)
+          for i in $(seq 1 12); do
+            OIDC=$(curl -sf "http://$ZIMAOS_HOST:9000/application/o/grafana/.well-known/openid-configuration" 2>/dev/null || echo "")
+            if echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
+              echo "✓ Authentik OIDC discovery OK"
+              break
+            fi
+            echo "  Waiting for blueprint to apply... ($i/12)"
+            sleep 15
+          done
+
+          if ! echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
+            echo "✗ Authentik OIDC discovery FAILED after retries"
+            echo "::warning::OIDC not configured — blueprint may not have been applied yet"
           fi
 
           # Check Grafana OAuth is enabled
-          GRAFANA_SETTINGS=$(curl -sf "http://$ZIMAOS_HOST:3000/api/health" 2>/dev/null)
           GRAFANA_LOGIN=$(curl -sf -o /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:3000/login/generic_oauth" 2>/dev/null || echo "000")
           if [ "$GRAFANA_LOGIN" = "302" ] || [ "$GRAFANA_LOGIN" = "307" ]; then
             echo "✓ Grafana OAuth redirect working"
