@@ -79,5 +79,9 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
         run: |
-          which jq || { curl -sLo /usr/local/bin/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 && chmod +x /usr/local/bin/jq; }
+          if ! which jq &>/dev/null; then
+            curl -sL -o "$HOME/jq" https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+            chmod +x "$HOME/jq"
+            export PATH="$HOME:$PATH"
+          fi
           bash scripts/configure-npm.sh
