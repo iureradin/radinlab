@@ -50,8 +50,8 @@ jobs:
       - name: Move CasaOS gateway off port 80
         run: |
           ssh root@$ZIMAOS_HOST "
-            sed -i 's/^port:.*/port: 8080/' /etc/casaos/gateway.ini
-            systemctl restart casaos-gateway
+            sed -i 's/^port = .*/port = 8080/' /etc/casaos/gateway.ini
+            systemctl restart zimaos-gateway.service
           "
 
       - name: Deploy apps
