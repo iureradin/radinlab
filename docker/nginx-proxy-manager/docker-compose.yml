@@ -5,7 +5,6 @@ services:
     container_name: nginx-proxy-manager
     mem_limit: 256m
     ports:
-      - "80:80"
       - "443:443"
       - "81:81"
     volumes:
@@ -18,9 +17,6 @@ services:
       icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/nginx-proxy-manager.png
     x-casaos:
       ports:
-        - container: "80"
-          description:
-            en_us: "HTTP"
         - container: "443"
           description:
             en_us: "HTTPS"

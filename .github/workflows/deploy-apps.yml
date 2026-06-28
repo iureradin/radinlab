@@ -47,13 +47,6 @@ jobs:
           scp docker/grafana/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/grafana/deploy/docker-compose.yml
           scp docker/blueprints/*.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/blueprints/
 
-      - name: Move CasaOS gateway off port 80
-        run: |
-          ssh root@$ZIMAOS_HOST "
-            sed -i 's/^port = .*/port = 8080/' /etc/casaos/gateway.ini
-            systemctl restart zimaos-gateway.service
-          "
-
       - name: Deploy apps
         run: |
           ssh root@$ZIMAOS_HOST "
@@ -83,4 +76,6 @@ jobs:
           NPM_URL: "http://${{ env.ZIMAOS_HOST }}:81"
           NPM_EMAIL: ${{ vars.NPM_EMAIL }}
           NPM_PASSWORD: ${{ secrets.NPM_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
         run: bash scripts/configure-npm.sh

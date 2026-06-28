@@ -4,6 +4,9 @@ set -euo pipefail
 NPM_URL="${NPM_URL:-http://localhost:81}"
 NPM_EMAIL="${NPM_EMAIL:?NPM_EMAIL not set}"
 NPM_PASSWORD="${NPM_PASSWORD:?NPM_PASSWORD not set}"
+LE_EMAIL="${LE_EMAIL:-$NPM_EMAIL}"
+AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID not set}"
+AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY not set}"
 
 # Login
 TOKEN=$(curl -sf "$NPM_URL/api/tokens" \
@@ -12,13 +15,39 @@ TOKEN=$(curl -sf "$NPM_URL/api/tokens" \
 
 echo "Authenticated with NPM"
 
-# Proxy hosts config: domain|host|port
+# Request wildcard SSL cert via DNS challenge (Route 53)
+EXISTING_CERTS=$(curl -sf "$NPM_URL/api/nginx/certificates" \
+  -H "Authorization: Bearer $TOKEN")
+
+CERT_ID=$(echo "$EXISTING_CERTS" | jq -r '.[] | select(.domain_names[] == "*.radinlab.com.br") | .id' | head -1)
+
+if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
+  echo "Requesting wildcard certificate for *.radinlab.com.br..."
+  CERT_ID=$(curl -sf "$NPM_URL/api/nginx/certificates" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"provider\": \"letsencrypt\",
+      \"domain_names\": [\"*.radinlab.com.br\", \"radinlab.com.br\"],
+      \"meta\": {
+        \"letsencrypt_email\": \"$LE_EMAIL\",
+        \"letsencrypt_agree\": true,
+        \"dns_challenge\": true,
+        \"dns_provider\": \"route53\",
+        \"dns_provider_credentials\": \"dns_aws_access_key_id=$AWS_ACCESS_KEY_ID\\ndns_aws_secret_access_key=$AWS_SECRET_ACCESS_KEY\"
+      }
+    }" | jq -r '.id')
+  echo "Certificate created (ID: $CERT_ID)"
+else
+  echo "Wildcard certificate already exists (ID: $CERT_ID)"
+fi
+
+# Proxy hosts: domain|host|port
 HOSTS=(
   "grafana.radinlab.com.br|grafana|3000"
   "auth.radinlab.com.br|authentik-server|9000"
 )
 
-# Get existing proxy hosts
 EXISTING=$(curl -sf "$NPM_URL/api/nginx/proxy-hosts" \
   -H "Authorization: Bearer $TOKEN" | jq -r '.[].domain_names[0]')
 
@@ -41,9 +70,7 @@ for entry in "${HOSTS[@]}"; do
       \"forward_port\": $port,
       \"ssl_forced\": true,
       \"allow_websocket_upgrade\": true,
-      \"meta\": {\"letsencrypt_agree\": true, \"dns_challenge\": false},
-      \"certificate_id\": \"new\",
-      \"advanced_config\": \"\",
+      \"certificate_id\": $CERT_ID,
       \"block_exploits\": true
     }" > /dev/null
 
