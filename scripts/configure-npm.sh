@@ -34,7 +34,7 @@ if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
         \"letsencrypt_agree\": true,
         \"dns_challenge\": true,
         \"dns_provider\": \"route53\",
-        \"dns_provider_credentials\": \"dns_route53_aws_access_key_id=$AWS_ACCESS_KEY_ID\\ndns_route53_aws_secret_access_key=$AWS_SECRET_ACCESS_KEY\"
+        \"dns_provider_credentials\": \"[default]\\naws_access_key_id=$AWS_ACCESS_KEY_ID\\naws_secret_access_key=$AWS_SECRET_ACCESS_KEY\"
       }
     }")
   echo "Certificate response: $CERT_RESPONSE"
