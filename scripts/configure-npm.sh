@@ -23,7 +23,7 @@ CERT_ID=$(echo "$EXISTING_CERTS" | jq -r '.[] | select(.domain_names[] == "*.rad
 
 if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
   echo "Requesting wildcard certificate for *.radinlab.com.br..."
-  CERT_ID=$(curl -sf "$NPM_URL/api/nginx/certificates" \
+  CERT_RESPONSE=$(curl -s "$NPM_URL/api/nginx/certificates" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -34,9 +34,15 @@ if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
         \"letsencrypt_agree\": true,
         \"dns_challenge\": true,
         \"dns_provider\": \"route53\",
-        \"dns_provider_credentials\": \"dns_aws_access_key_id=$AWS_ACCESS_KEY_ID\\ndns_aws_secret_access_key=$AWS_SECRET_ACCESS_KEY\"
+        \"dns_provider_credentials\": \"dns_route53_aws_access_key_id=$AWS_ACCESS_KEY_ID\\ndns_route53_aws_secret_access_key=$AWS_SECRET_ACCESS_KEY\"
       }
-    }" | jq -r '.id')
+    }")
+  echo "Certificate response: $CERT_RESPONSE"
+  CERT_ID=$(echo "$CERT_RESPONSE" | jq -r '.id')
+  if [ -z "$CERT_ID" ] || [ "$CERT_ID" = "null" ]; then
+    echo "ERROR: Failed to create certificate"
+    exit 1
+  fi
   echo "Certificate created (ID: $CERT_ID)"
 else
   echo "Wildcard certificate already exists (ID: $CERT_ID)"
