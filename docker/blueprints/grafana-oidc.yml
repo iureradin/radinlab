@@ -11,7 +11,7 @@ entries:
       client_id: grafana-0edf664f8ab80b2d
       client_secret: !Env [GRAFANA_OIDC_SECRET]
       redirect_uris: |
-        http://10.0.0.140:3000/login/generic_oauth
+        https://grafana.radinlab.com.br/login/generic_oauth
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
@@ -22,4 +22,4 @@ entries:
       name: Grafana
       slug: grafana
       provider: !KeyOf grafana-provider
-      meta_launch_url: http://10.0.0.140:3000
+      meta_launch_url: https://grafana.radinlab.com.br

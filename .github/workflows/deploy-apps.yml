@@ -1,5 +1,9 @@
 name: Deploy Apps
 on:
+  push:
+    paths:
+      - "docker/**"
+      - "scripts/configure-npm.sh"
   workflow_dispatch:
   workflow_run:
     workflows: ["Terraform Deploy (Dev)"]
@@ -66,3 +70,10 @@ jobs:
         run: |
           sleep 30
           ssh root@$ZIMAOS_HOST "docker ps --format '{{.Names}} {{.Status}}' | grep -E 'authentik|grafana|nginx-proxy-manager'"
+
+      - name: Configure NPM proxy hosts
+        env:
+          NPM_URL: "http://${{ env.ZIMAOS_HOST }}:81"
+          NPM_EMAIL: ${{ vars.NPM_EMAIL }}
+          NPM_PASSWORD: ${{ secrets.NPM_PASSWORD }}
+        run: bash scripts/configure-npm.sh
