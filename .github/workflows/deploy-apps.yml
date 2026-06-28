@@ -54,6 +54,8 @@ jobs:
             cd /DATA/storage1/authentik/deploy
             export AUTHENTIK_SECRET_KEY='${{ secrets.AUTHENTIK_SECRET_KEY }}'
             export AUTHENTIK_DB_PASSWORD='${{ secrets.AUTHENTIK_DB_PASSWORD }}'
+            export AUTHENTIK_BOOTSTRAP_EMAIL='${{ vars.NPM_EMAIL }}'
+            export AUTHENTIK_BOOTSTRAP_PASSWORD='${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}'
             docker compose up -d --remove-orphans
 
             # Grafana
