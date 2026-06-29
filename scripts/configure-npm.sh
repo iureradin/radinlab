@@ -1,5 +1,6 @@
 #!/bin/bash
 # Configure NPM proxy hosts and wildcard SSL via Route 53 DNS challenge
+# Idempotent — skips existing resources
 set -euo pipefail
 
 NPM_URL="${NPM_URL:-http://localhost:81}"
