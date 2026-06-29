@@ -12,7 +12,6 @@ jobs:
   deploy:
     runs-on: [self-hosted, dev]
     environment: dev
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     env:
       PROXMOX_HOST: "10.0.0.80"
       ZIMAOS_HOST: "10.0.0.140"
