@@ -87,6 +87,15 @@ jobs:
             docker compose up -d --remove-orphans
           "
 
+      - name: Set Authentik admin password
+        run: |
+          # Wait for server to be ready
+          for i in $(seq 1 12); do
+            ssh root@$ZIMAOS_HOST "docker exec authentik-server ak healthcheck" &>/dev/null && break
+            sleep 5
+          done
+          ssh root@$ZIMAOS_HOST "docker exec authentik-server ak change_password --username akadmin --password '${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}'"
+
       - name: Deploy Grafana
         run: |
           ssh root@$ZIMAOS_HOST "
