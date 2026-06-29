@@ -94,7 +94,13 @@ jobs:
             ssh root@$ZIMAOS_HOST "docker exec authentik-server ak healthcheck" &>/dev/null && break
             sleep 5
           done
-          ssh root@$ZIMAOS_HOST "docker exec authentik-server ak change_password --username akadmin --password '${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}'"
+          ssh root@$ZIMAOS_HOST "docker exec authentik-server ak shell -c \"
+from authentik.core.models import User
+u = User.objects.get(username='akadmin')
+u.set_password('${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}')
+u.save()
+print('Password updated')
+\""
 
       - name: Deploy Grafana
         run: |
