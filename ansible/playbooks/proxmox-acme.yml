@@ -38,7 +38,7 @@
         --acmedomain0 domain={{ acme_domain }},plugin=route53
 
     - name: Solicitar certificado via ACME
-      command: pvenode acme cert order
+      command: pvenode acme cert order --force
       register: acme_order
       retries: 3
       delay: 30
