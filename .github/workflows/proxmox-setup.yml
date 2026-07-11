@@ -7,9 +7,10 @@ on:
       - dev
 jobs:
   configure:
-    runs-on: [self-hosted, dev]
+    runs-on: [self-hosted, "${{ github.ref_name }}"]
     if: github.ref_name == 'prod' || github.ref_name == 'dev'
     environment: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+      - run: echo "Hello World"
       - run: ansible-playbook -i ansible/inventory/${{ github.ref_name }}.yml ansible/playbooks/proxmox-postinstall.yml
