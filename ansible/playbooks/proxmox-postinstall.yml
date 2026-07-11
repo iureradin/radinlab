@@ -1,4 +1,5 @@
 - hosts: all
+  any_errors_fatal: true
   tasks:
     - name: Verificar se repo enterprise existe
       stat:

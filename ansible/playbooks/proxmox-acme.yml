@@ -1,4 +1,5 @@
 - hosts: all
+  any_errors_fatal: true
   vars:
     acme_email: "{{ lookup('env', 'ACME_EMAIL') }}"
     acme_domain: "{{ lookup('env', 'PROXMOX_HOST') }}"
