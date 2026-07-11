@@ -6,11 +6,15 @@
     aws_secret: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
   tasks:
     - name: Registrar conta ACME no Let's Encrypt
-      command: >
-        pvenode acme account register default {{ acme_email }}
-        --directory https://acme-v02.api.letsencrypt.org/directory
-      args:
-        creates: /etc/pve/priv/acme/default
+      shell: |
+        if [ -f /etc/pve/priv/acme/default ]; then
+          echo "skip"
+          exit 0
+        fi
+        yes | pvenode acme account register default {{ acme_email }} \
+          --directory https://acme-v02.api.letsencrypt.org/directory
+      register: acme_register
+      changed_when: "'skip' not in acme_register.stdout"
 
     - name: Verificar se plugin route53 já existe
       command: pvenode acme plugin list --output-format json
