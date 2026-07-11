@@ -13,4 +13,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo "Hello World"
-      - run: ansible-playbook -i ansible/inventory/${{ github.ref_name }}.yml ansible/playbooks/proxmox-postinstall.yml
+      # - run: ansible-playbook -i ansible/inventory/${{ github.ref_name }}.yml ansible/playbooks/proxmox-postinstall.yml
