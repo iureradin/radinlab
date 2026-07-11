@@ -1,222 +1,223 @@
-name: Deploy Apps
-on:
-#  push:
-#    paths:
-#      - "docker/**"
-#      - "scripts/**"
-  workflow_dispatch:
-  workflow_run:
-    workflows: ["Terraform Deploy (Dev)"]
-    types: [completed]
-jobs:
-  deploy:
-    runs-on: [self-hosted, dev]
-    environment: dev
-    env:
-      PROXMOX_HOST: "10.0.0.80"
-      ZIMAOS_HOST: "10.0.0.140"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install tools
-        run: |
-          if ! which jq &>/dev/null; then
-            curl -sL -o "$HOME/jq" https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
-            chmod +x "$HOME/jq"
-          fi
-          echo "$HOME" >> $GITHUB_PATH
-
-      - name: Wait for SSH
-        run: |
-          for i in $(seq 1 12); do
-            ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new root@$ZIMAOS_HOST "hostname" && exit 0
-            sleep 10
-          done
-          echo "::error::SSH timeout" && exit 1
-
-      - name: Snapshot before deploy
-        run: |
-          ssh root@$PROXMOX_HOST "qm snapshot 106 pre-deploy-\$(date +%s) --description 'Auto: before app deploy'" || true
-
-      - name: Cleanup old compose
-        run: |
-          ssh root@$ZIMAOS_HOST "
-            cd /DATA/storage1 && docker compose down --remove-orphans 2>/dev/null || true
-            docker network rm authentik_authentik 2>/dev/null || true
-            rm -f /DATA/storage1/docker-compose.yml
-            mkdir -p /DATA/storage1/grafana && chown 472:472 /DATA/storage1/grafana
-          "
-
-      - name: Copy compose files to ZimaOS
-        run: |
-          ssh root@$ZIMAOS_HOST "mkdir -p /DATA/storage1/{authentik,grafana,npm}/deploy /DATA/storage1/authentik/blueprints"
-          scp docker/nginx-proxy-manager/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/npm/deploy/docker-compose.yml
-          scp docker/authentik/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/deploy/docker-compose.yml
-          scp docker/grafana/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/grafana/deploy/docker-compose.yml
-          scp docker/blueprints/*.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/blueprints/
-
-      - name: Bootstrap Authentik (smart reset if needed)
-        run: |
-          ssh root@$ZIMAOS_HOST "
-            cd /DATA/storage1/authentik/deploy
-            export AUTHENTIK_SECRET_KEY='${{ secrets.AUTHENTIK_SECRET_KEY }}'
-            export AUTHENTIK_DB_PASSWORD='${{ secrets.AUTHENTIK_DB_PASSWORD }}'
-            export AUTHENTIK_BOOTSTRAP_EMAIL='${{ vars.NPM_EMAIL }}'
-            export AUTHENTIK_BOOTSTRAP_PASSWORD='${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}'
-
-            # Start DB and Redis first
-            docker compose up -d db redis
-            sleep 5
-
-            # Check if admin user exists
-            ADMIN_EXISTS=\$(docker exec authentik-db psql -U authentik -tAc \
-              \"SELECT count(*) FROM authentik_core_user WHERE username='akadmin';\" 2>/dev/null || echo '0')
-
-            if [ \"\$ADMIN_EXISTS\" = '0' ]; then
-              echo '⚡ No admin found — resetting DB for fresh bootstrap'
-              docker compose down
-              rm -rf /DATA/storage1/authentik/db/*
-              docker compose up -d db redis
-              sleep 10
-            else
-              echo '✓ Admin exists, skipping reset'
-            fi
-
-            # Start server and worker
-            docker compose up -d --remove-orphans
-          "
-
-      - name: Set Authentik admin password
-        run: |
-          # Wait for server to be ready
-          for i in $(seq 1 12); do
-            ssh root@$ZIMAOS_HOST "docker exec authentik-server ak healthcheck" &>/dev/null && break
-            sleep 5
-          done
-          ssh root@$ZIMAOS_HOST "docker exec authentik-server ak shell -c \"
-from authentik.core.models import User
-u = User.objects.get(username='akadmin')
-u.set_password('${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}')
-u.save()
-print('Password updated')
-\""
-
-      - name: Deploy Grafana
-        run: |
-          ssh root@$ZIMAOS_HOST "
-            cd /DATA/storage1/grafana/deploy
-            export GRAFANA_OIDC_SECRET='${{ secrets.GRAFANA_OIDC_SECRET }}'
-            docker compose up -d --remove-orphans
-          "
-
-      - name: Deploy Nginx Proxy Manager
-        run: |
-          ssh root@$ZIMAOS_HOST "
-            cd /DATA/storage1/npm/deploy
-            docker compose up -d --remove-orphans
-          "
-
-      - name: Health checks
-        run: |
-          echo "Waiting for services to stabilize..."
-          sleep 30
-
-          FAILED=0
-
-          # Check containers are running
-          echo "=== Container Status ==="
-          ssh root@$ZIMAOS_HOST "docker ps --format '{{.Names}} {{.Status}}'" | grep -E 'authentik|grafana|nginx-proxy-manager'
-
-          # HTTP health checks
-          echo ""
-          echo "=== HTTP Health Checks ==="
-
-          # Authentik
-          for i in $(seq 1 6); do
-            STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:9000/-/health/ready/" 2>/dev/null || echo "000")
-            [ "$STATUS" = "200" ] && break
-            sleep 10
-          done
-          if [ "$STATUS" = "200" ]; then
-            echo "✓ Authentik ready (HTTP $STATUS)"
-          else
-            echo "✗ Authentik NOT ready (HTTP $STATUS)"
-            FAILED=1
-          fi
-
-          # Grafana
-          STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:3000/api/health" 2>/dev/null || echo "000")
-          if [ "$STATUS" = "200" ]; then
-            echo "✓ Grafana ready (HTTP $STATUS)"
-          else
-            echo "✗ Grafana NOT ready (HTTP $STATUS)"
-            FAILED=1
-          fi
-
-          # NPM
-          STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:81" 2>/dev/null || echo "000")
-          if [ "$STATUS" = "200" ]; then
-            echo "✓ NPM ready (HTTP $STATUS)"
-          else
-            echo "✗ NPM NOT ready (HTTP $STATUS)"
-            FAILED=1
-          fi
-
-          [ "$FAILED" -eq 0 ] || { echo "::error::Health checks failed"; exit 1; }
-
-      - name: Configure NPM proxy hosts
-        env:
-          NPM_URL: "http://${{ env.ZIMAOS_HOST }}:81"
-          NPM_EMAIL: ${{ vars.NPM_EMAIL }}
-          NPM_PASSWORD: ${{ secrets.NPM_PASSWORD }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
-        run: bash scripts/configure-npm.sh
-
-      - name: Validate SSL certificates
-        run: |
-          echo "=== SSL Validation ==="
-          FAILED=0
-
-          for DOMAIN in grafana.radinlab.com.br auth.radinlab.com.br; do
-            if curl -sf --max-time 10 "https://$DOMAIN" -o /dev/null 2>/dev/null; then
-              EXPIRY=$(echo | openssl s_client -servername "$DOMAIN" -connect "$ZIMAOS_HOST:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
-              echo "✓ $DOMAIN — valid until $EXPIRY"
-            else
-              echo "✗ $DOMAIN — SSL not working"
-              FAILED=1
-            fi
-          done
-
-          [ "$FAILED" -eq 0 ] || { echo "::warning::SSL validation failed (may need DNS propagation)"; }
-
-      - name: Validate OIDC flow
-        run: |
-          echo "=== OIDC Validation ==="
-
-          # Check Authentik OIDC discovery endpoint (retry — blueprint takes time to apply)
-          for i in $(seq 1 12); do
-            OIDC=$(curl -sf "http://$ZIMAOS_HOST:9000/application/o/grafana/.well-known/openid-configuration" 2>/dev/null || echo "")
-            if echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
-              echo "✓ Authentik OIDC discovery OK"
-              break
-            fi
-            echo "  Waiting for blueprint to apply... ($i/12)"
-            sleep 15
-          done
-
-          if ! echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
-            echo "✗ Authentik OIDC discovery FAILED after retries"
-            echo "::warning::OIDC not configured — blueprint may not have been applied yet"
-          fi
-
-          # Check Grafana OAuth is enabled
-          GRAFANA_LOGIN=$(curl -sf -o /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:3000/login/generic_oauth" 2>/dev/null || echo "000")
-          if [ "$GRAFANA_LOGIN" = "302" ] || [ "$GRAFANA_LOGIN" = "307" ]; then
-            echo "✓ Grafana OAuth redirect working"
-          else
-            echo "⚠ Grafana OAuth endpoint returned HTTP $GRAFANA_LOGIN (may still work via browser)"
-          fi
-
-          echo ""
-          echo "=== Deploy Complete ==="
+# ⚠️ PIPELINE PAUSADA — descomentar para reativar
+# name: Deploy Apps
+# on:
+# #  push:
+# #    paths:
+# #      - "docker/**"
+# #      - "scripts/**"
+#   workflow_dispatch:
+#   workflow_run:
+#     workflows: ["Terraform Deploy (Dev)"]
+#     types: [completed]
+# jobs:
+#   deploy:
+#     runs-on: [self-hosted, dev]
+#     environment: dev
+#     env:
+#       PROXMOX_HOST: "10.0.0.80"
+#       ZIMAOS_HOST: "10.0.0.140"
+#     steps:
+#       - uses: actions/checkout@v4
+# 
+#       - name: Install tools
+#         run: |
+#           if ! which jq &>/dev/null; then
+#             curl -sL -o "$HOME/jq" https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+#             chmod +x "$HOME/jq"
+#           fi
+#           echo "$HOME" >> $GITHUB_PATH
+# 
+#       - name: Wait for SSH
+#         run: |
+#           for i in $(seq 1 12); do
+#             ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new root@$ZIMAOS_HOST "hostname" && exit 0
+#             sleep 10
+#           done
+#           echo "::error::SSH timeout" && exit 1
+# 
+#       - name: Snapshot before deploy
+#         run: |
+#           ssh root@$PROXMOX_HOST "qm snapshot 106 pre-deploy-\$(date +%s) --description 'Auto: before app deploy'" || true
+# 
+#       - name: Cleanup old compose
+#         run: |
+#           ssh root@$ZIMAOS_HOST "
+#             cd /DATA/storage1 && docker compose down --remove-orphans 2>/dev/null || true
+#             docker network rm authentik_authentik 2>/dev/null || true
+#             rm -f /DATA/storage1/docker-compose.yml
+#             mkdir -p /DATA/storage1/grafana && chown 472:472 /DATA/storage1/grafana
+#           "
+# 
+#       - name: Copy compose files to ZimaOS
+#         run: |
+#           ssh root@$ZIMAOS_HOST "mkdir -p /DATA/storage1/{authentik,grafana,npm}/deploy /DATA/storage1/authentik/blueprints"
+#           scp docker/nginx-proxy-manager/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/npm/deploy/docker-compose.yml
+#           scp docker/authentik/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/deploy/docker-compose.yml
+#           scp docker/grafana/docker-compose.yml root@$ZIMAOS_HOST:/DATA/storage1/grafana/deploy/docker-compose.yml
+#           scp docker/blueprints/*.yml root@$ZIMAOS_HOST:/DATA/storage1/authentik/blueprints/
+# 
+#       - name: Bootstrap Authentik (smart reset if needed)
+#         run: |
+#           ssh root@$ZIMAOS_HOST "
+#             cd /DATA/storage1/authentik/deploy
+#             export AUTHENTIK_SECRET_KEY='${{ secrets.AUTHENTIK_SECRET_KEY }}'
+#             export AUTHENTIK_DB_PASSWORD='${{ secrets.AUTHENTIK_DB_PASSWORD }}'
+#             export AUTHENTIK_BOOTSTRAP_EMAIL='${{ vars.NPM_EMAIL }}'
+#             export AUTHENTIK_BOOTSTRAP_PASSWORD='${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}'
+# 
+#             # Start DB and Redis first
+#             docker compose up -d db redis
+#             sleep 5
+# 
+#             # Check if admin user exists
+#             ADMIN_EXISTS=\$(docker exec authentik-db psql -U authentik -tAc \
+#               \"SELECT count(*) FROM authentik_core_user WHERE username='akadmin';\" 2>/dev/null || echo '0')
+# 
+#             if [ \"\$ADMIN_EXISTS\" = '0' ]; then
+#               echo '⚡ No admin found — resetting DB for fresh bootstrap'
+#               docker compose down
+#               rm -rf /DATA/storage1/authentik/db/*
+#               docker compose up -d db redis
+#               sleep 10
+#             else
+#               echo '✓ Admin exists, skipping reset'
+#             fi
+# 
+#             # Start server and worker
+#             docker compose up -d --remove-orphans
+#           "
+# 
+#       - name: Set Authentik admin password
+#         run: |
+#           # Wait for server to be ready
+#           for i in $(seq 1 12); do
+#             ssh root@$ZIMAOS_HOST "docker exec authentik-server ak healthcheck" &>/dev/null && break
+#             sleep 5
+#           done
+#           ssh root@$ZIMAOS_HOST "docker exec authentik-server ak shell -c \"
+# from authentik.core.models import User
+# u = User.objects.get(username='akadmin')
+# u.set_password('${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}')
+# u.save()
+# print('Password updated')
+# \""
+# 
+#       - name: Deploy Grafana
+#         run: |
+#           ssh root@$ZIMAOS_HOST "
+#             cd /DATA/storage1/grafana/deploy
+#             export GRAFANA_OIDC_SECRET='${{ secrets.GRAFANA_OIDC_SECRET }}'
+#             docker compose up -d --remove-orphans
+#           "
+# 
+#       - name: Deploy Nginx Proxy Manager
+#         run: |
+#           ssh root@$ZIMAOS_HOST "
+#             cd /DATA/storage1/npm/deploy
+#             docker compose up -d --remove-orphans
+#           "
+# 
+#       - name: Health checks
+#         run: |
+#           echo "Waiting for services to stabilize..."
+#           sleep 30
+# 
+#           FAILED=0
+# 
+#           # Check containers are running
+#           echo "=== Container Status ==="
+#           ssh root@$ZIMAOS_HOST "docker ps --format '{{.Names}} {{.Status}}'" | grep -E 'authentik|grafana|nginx-proxy-manager'
+# 
+#           # HTTP health checks
+#           echo ""
+#           echo "=== HTTP Health Checks ==="
+# 
+#           # Authentik
+#           for i in $(seq 1 6); do
+#             STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:9000/-/health/ready/" 2>/dev/null || echo "000")
+#             [ "$STATUS" = "200" ] && break
+#             sleep 10
+#           done
+#           if [ "$STATUS" = "200" ]; then
+#             echo "✓ Authentik ready (HTTP $STATUS)"
+#           else
+#             echo "✗ Authentik NOT ready (HTTP $STATUS)"
+#             FAILED=1
+#           fi
+# 
+#           # Grafana
+#           STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:3000/api/health" 2>/dev/null || echo "000")
+#           if [ "$STATUS" = "200" ]; then
+#             echo "✓ Grafana ready (HTTP $STATUS)"
+#           else
+#             echo "✗ Grafana NOT ready (HTTP $STATUS)"
+#             FAILED=1
+#           fi
+# 
+#           # NPM
+#           STATUS=$(curl -so /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:81" 2>/dev/null || echo "000")
+#           if [ "$STATUS" = "200" ]; then
+#             echo "✓ NPM ready (HTTP $STATUS)"
+#           else
+#             echo "✗ NPM NOT ready (HTTP $STATUS)"
+#             FAILED=1
+#           fi
+# 
+#           [ "$FAILED" -eq 0 ] || { echo "::error::Health checks failed"; exit 1; }
+# 
+#       - name: Configure NPM proxy hosts
+#         env:
+#           NPM_URL: "http://${{ env.ZIMAOS_HOST }}:81"
+#           NPM_EMAIL: ${{ vars.NPM_EMAIL }}
+#           NPM_PASSWORD: ${{ secrets.NPM_PASSWORD }}
+#           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+#           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+#         run: bash scripts/configure-npm.sh
+# 
+#       - name: Validate SSL certificates
+#         run: |
+#           echo "=== SSL Validation ==="
+#           FAILED=0
+# 
+#           for DOMAIN in grafana.radinlab.com.br auth.radinlab.com.br; do
+#             if curl -sf --max-time 10 "https://$DOMAIN" -o /dev/null 2>/dev/null; then
+#               EXPIRY=$(echo | openssl s_client -servername "$DOMAIN" -connect "$ZIMAOS_HOST:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+#               echo "✓ $DOMAIN — valid until $EXPIRY"
+#             else
+#               echo "✗ $DOMAIN — SSL not working"
+#               FAILED=1
+#             fi
+#           done
+# 
+#           [ "$FAILED" -eq 0 ] || { echo "::warning::SSL validation failed (may need DNS propagation)"; }
+# 
+#       - name: Validate OIDC flow
+#         run: |
+#           echo "=== OIDC Validation ==="
+# 
+#           # Check Authentik OIDC discovery endpoint (retry — blueprint takes time to apply)
+#           for i in $(seq 1 12); do
+#             OIDC=$(curl -sf "http://$ZIMAOS_HOST:9000/application/o/grafana/.well-known/openid-configuration" 2>/dev/null || echo "")
+#             if echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
+#               echo "✓ Authentik OIDC discovery OK"
+#               break
+#             fi
+#             echo "  Waiting for blueprint to apply... ($i/12)"
+#             sleep 15
+#           done
+# 
+#           if ! echo "$OIDC" | jq -e '.authorization_endpoint' &>/dev/null; then
+#             echo "✗ Authentik OIDC discovery FAILED after retries"
+#             echo "::warning::OIDC not configured — blueprint may not have been applied yet"
+#           fi
+# 
+#           # Check Grafana OAuth is enabled
+#           GRAFANA_LOGIN=$(curl -sf -o /dev/null -w '%{http_code}' "http://$ZIMAOS_HOST:3000/login/generic_oauth" 2>/dev/null || echo "000")
+#           if [ "$GRAFANA_LOGIN" = "302" ] || [ "$GRAFANA_LOGIN" = "307" ]; then
+#             echo "✓ Grafana OAuth redirect working"
+#           else
+#             echo "⚠ Grafana OAuth endpoint returned HTTP $GRAFANA_LOGIN (may still work via browser)"
+#           fi
+# 
+#           echo ""
+#           echo "=== Deploy Complete ==="
