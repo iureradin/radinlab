@@ -1,0 +1,5 @@
+all:
+  hosts:
+    dell:
+      ansible_host: 10.0.0.80
+      ansible_user: root

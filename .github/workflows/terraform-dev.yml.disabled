@@ -1,0 +1,41 @@
+# ⚠️ PIPELINE PAUSADA — descomentar para reativar
+# name: Terraform Deploy (Dev)
+# on:
+#   workflow_dispatch:
+#   workflow_run:
+#     workflows: ["Proxmox Post-Install"]
+#     types: [completed]
+# jobs:
+#   deploy:
+#     runs-on: [self-hosted, dev]
+#     environment: dev
+#     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+#     env:
+#       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+#       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+#       AWS_REGION: ${{ vars.AWS_REGION }}
+#       TF_VAR_proxmox_endpoint: ${{ vars.PROXMOX_ENDPOINT }}
+#       TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+#     steps:
+#       - uses: actions/checkout@v4
+# 
+#       - name: Bootstrap S3 backend
+#         run: bash scripts/bootstrap-s3.sh
+# 
+#       - name: Bootstrap VM template
+#         env:
+#           PROXMOX_HOST: "10.0.0.80"
+#           TEMPLATE_VMID: "105"
+#         run: bash scripts/bootstrap-template.sh
+# 
+#       - name: Terraform Init
+#         working-directory: terraform/environments/dev
+#         run: terraform init
+# 
+#       - name: Terraform Plan
+#         working-directory: terraform/environments/dev
+#         run: terraform plan -out=tfplan
+# 
+#       - name: Terraform Apply
+#         working-directory: terraform/environments/dev
+#         run: terraform apply -auto-approve tfplan
