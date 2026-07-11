@@ -7,9 +7,24 @@ on:
       - dev
 
 jobs:
+  lint:
+    name: Ansible Lint
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansible-lint
+        run: pip install ansible-lint --quiet 2>/dev/null || pip install ansible-lint --quiet --break-system-packages
+
+      - name: Run ansible-lint
+        run: ansible-lint ansible/playbooks/*.yml
+
   proxmox-postinstall:
     name: Proxmox Post-Install
+    needs: lint
     runs-on: [self-hosted, prod]
+    timeout-minutes: 10
     if: github.ref_name == 'prod' || github.ref_name == 'dev'
     environment: ${{ github.ref_name }}
     env:
@@ -36,6 +51,7 @@ jobs:
     name: Configurar ACME
     needs: proxmox-postinstall
     runs-on: [self-hosted, prod]
+    timeout-minutes: 10
     environment: ${{ github.ref_name }}
     env:
       ANSIBLE_HOST_KEY_CHECKING: "false"
