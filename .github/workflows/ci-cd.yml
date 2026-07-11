@@ -15,7 +15,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install ansible-lint
-        run: pip install ansible-lint --quiet 2>/dev/null || pip install ansible-lint --quiet --break-system-packages
+        run: |
+          if ! command -v pip3 &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip
+          fi
+          pip3 install ansible-lint --quiet --break-system-packages
 
       - name: Run ansible-lint
         run: ansible-lint ansible/playbooks/*.yml
