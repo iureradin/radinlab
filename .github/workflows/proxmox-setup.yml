@@ -1,11 +1,15 @@
-# ⚠️ PIPELINE PAUSADA — descomentar para reativar
-# name: Proxmox Post-Install
-# on:
-#   workflow_dispatch:
-#   push:
-# jobs:
-#   configure:
-#     runs-on: [self-hosted, dev]
-#     steps:
-#       - uses: actions/checkout@v4
-#       - run: ansible-playbook -i ansible/inventory/dev.yml ansible/playbooks/proxmox-postinstall.yml
+name: Proxmox Post-Install
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - prod
+      - dev
+jobs:
+  configure:
+    runs-on: [self-hosted, dev]
+    if: github.ref_name == 'prod' || github.ref_name == 'dev'
+    environment: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ansible-playbook -i ansible/inventory/${{ github.ref_name }}.yml ansible/playbooks/proxmox-postinstall.yml
