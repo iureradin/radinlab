@@ -1,4 +1,4 @@
-- hosts: dell
+- hosts: all
   tasks:
     - name: Desabilitar repo enterprise
       replace:
