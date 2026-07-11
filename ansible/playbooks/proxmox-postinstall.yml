@@ -1,16 +1,33 @@
 - hosts: all
   tasks:
+    - name: Verificar se repo enterprise existe
+      stat:
+        path: /etc/apt/sources.list.d/pve-enterprise.sources
+      register: pve_enterprise
+
     - name: Desabilitar repo enterprise
       replace:
         path: /etc/apt/sources.list.d/pve-enterprise.sources
         regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
         replace: '#\1'
+      when: pve_enterprise.stat.exists
+
+    - name: Verificar se repo Ceph enterprise existe
+      stat:
+        path: /etc/apt/sources.list.d/ceph.sources
+      register: ceph_enterprise
 
     - name: Desabilitar repo Ceph enterprise
       replace:
         path: /etc/apt/sources.list.d/ceph.sources
         regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
         replace: '#\1'
+      when: ceph_enterprise.stat.exists
+
+    - name: Verificar se repo no-subscription já existe
+      stat:
+        path: /etc/apt/sources.list.d/pve-no-subscription.sources
+      register: pve_nosub
 
     - name: Adicionar repo no-subscription
       copy:
@@ -21,10 +38,15 @@
           Suites: trixie
           Components: pve-no-subscription
           Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+      when: not pve_nosub.stat.exists
 
     - name: Remover nag de subscription
       shell: |
         FILE=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        if [ ! -f "$FILE" ]; then
+          echo "skip"
+          exit 0
+        fi
         if grep -q "gettext('No valid subscription')" "$FILE" && ! grep -B1 "No valid subscription" "$FILE" | grep -q void; then
           LINE=$(grep -n "No valid subscription" "$FILE" | head -1 | cut -d: -f1)
           PREV=$((LINE - 1))
