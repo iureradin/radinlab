@@ -1,9 +1,9 @@
 name: Deploy Apps
 on:
-  push:
-    paths:
-      - "docker/**"
-      - "scripts/**"
+#  push:
+#    paths:
+#      - "docker/**"
+#      - "scripts/**"
   workflow_dispatch:
   workflow_run:
     workflows: ["Terraform Deploy (Dev)"]
