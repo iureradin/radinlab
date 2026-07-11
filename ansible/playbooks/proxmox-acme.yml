@@ -42,33 +42,3 @@
       retries: 3
       delay: 30
       until: acme_order.rc == 0
-
-    - name: Configurar pveproxy na porta 443
-      copy:
-        dest: /etc/default/pveproxy
-        content: |
-          LISTEN_IP=0.0.0.0
-          PORT=443
-      notify: restart pveproxy
-
-    - name: Liberar porta 443 no firewall (se ativo)
-      shell: |
-        if command -v pve-firewall &>/dev/null && pve-firewall status | grep -q "running"; then
-          if ! grep -q "dest 443" /etc/pve/local/host.fw 2>/dev/null; then
-            mkdir -p /etc/pve/local
-            echo -e "[RULES]\nIN ACCEPT -p tcp -dport 443 -log nolog" >> /etc/pve/local/host.fw
-            echo changed
-          else
-            echo ok
-          fi
-        else
-          echo skip
-        fi
-      register: fw_result
-      changed_when: "'changed' in fw_result.stdout"
-
-  handlers:
-    - name: restart pveproxy
-      service:
-        name: pveproxy
-        state: restarted
