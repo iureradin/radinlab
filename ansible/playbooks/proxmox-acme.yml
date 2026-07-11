@@ -22,10 +22,13 @@
       changed_when: false
 
     - name: Configurar plugin DNS Route53
-      command: >
-        pvenode acme plugin add dns route53
-        --api aws
-        --data "AWS_ACCESS_KEY_ID={{ aws_key }},AWS_SECRET_ACCESS_KEY={{ aws_secret }}"
+      shell: |
+        cat > /tmp/route53-creds.ini <<EOF
+        AWS_ACCESS_KEY_ID={{ aws_key }}
+        AWS_SECRET_ACCESS_KEY={{ aws_secret }}
+        EOF
+        pvenode acme plugin add dns route53 --api aws --data /tmp/route53-creds.ini
+        rm -f /tmp/route53-creds.ini
       when: "'route53' not in acme_plugins.stdout"
 
     - name: Configurar domínio ACME no node
