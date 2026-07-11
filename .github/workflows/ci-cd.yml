@@ -1,12 +1,14 @@
-name: Proxmox Post-Install
+name: CI/CD
 on:
   workflow_dispatch:
   push:
     branches:
       - prod
       - dev
+
 jobs:
-  configure:
+  proxmox-postinstall:
+    name: Proxmox Post-Install
     runs-on: [self-hosted, prod]
     if: github.ref_name == 'prod' || github.ref_name == 'dev'
     environment: ${{ github.ref_name }}
@@ -29,6 +31,16 @@ jobs:
 
       - name: Post-install Proxmox
         run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-postinstall.yml
+
+  acme:
+    name: Configurar ACME
+    needs: proxmox-postinstall
+    runs-on: [self-hosted, prod]
+    environment: ${{ github.ref_name }}
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "false"
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Configurar ACME + HTTPS 443
         env:
