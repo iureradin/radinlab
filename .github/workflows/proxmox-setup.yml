@@ -15,6 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validar variáveis obrigatórias
+        run: |
+          missing=""
+          [ -z "${{ vars.PROXMOX_HOST }}" ] && missing="$missing PROXMOX_HOST"
+          [ -z "${{ vars.ACME_EMAIL }}" ] && missing="$missing ACME_EMAIL"
+          [ -z "${{ secrets.AWS_ACCESS_KEY }}" ] && missing="$missing AWS_ACCESS_KEY"
+          [ -z "${{ secrets.AWS_SECRET_KEY }}" ] && missing="$missing AWS_SECRET_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Variáveis ausentes:$missing"
+            exit 1
+          fi
+
       - name: Post-install Proxmox
         run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-postinstall.yml
 
