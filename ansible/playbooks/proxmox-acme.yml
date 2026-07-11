@@ -1,0 +1,68 @@
+- hosts: all
+  vars:
+    acme_email: "{{ lookup('env', 'ACME_EMAIL') }}"
+    acme_domain: "{{ lookup('env', 'PROXMOX_HOST') }}"
+    aws_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    aws_secret: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+  tasks:
+    - name: Registrar conta ACME no Let's Encrypt
+      command: >
+        pvenode acme account register default {{ acme_email }}
+        --directory https://acme-v02.api.letsencrypt.org/directory
+      args:
+        creates: /etc/pve/priv/acme/default
+
+    - name: Verificar se plugin route53 já existe
+      command: pvenode acme plugin list --output-format json
+      register: acme_plugins
+      changed_when: false
+
+    - name: Configurar plugin DNS Route53
+      command: >
+        pvenode acme plugin add dns route53
+        --api aws
+        --data "AWS_ACCESS_KEY_ID={{ aws_key }},AWS_SECRET_ACCESS_KEY={{ aws_secret }}"
+      when: "'route53' not in acme_plugins.stdout"
+
+    - name: Configurar domínio ACME no node
+      command: >
+        pvenode config set
+        --acme domains={{ acme_domain }}
+        --acmedomain0 domain={{ acme_domain }},plugin=route53
+
+    - name: Solicitar certificado via ACME
+      command: pvenode acme cert order
+      register: acme_order
+      retries: 3
+      delay: 30
+      until: acme_order.rc == 0
+
+    - name: Configurar pveproxy na porta 443
+      copy:
+        dest: /etc/default/pveproxy
+        content: |
+          LISTEN_IP=0.0.0.0
+          PORT=443
+      notify: restart pveproxy
+
+    - name: Liberar porta 443 no firewall (se ativo)
+      shell: |
+        if command -v pve-firewall &>/dev/null && pve-firewall status | grep -q "running"; then
+          if ! grep -q "dest 443" /etc/pve/local/host.fw 2>/dev/null; then
+            mkdir -p /etc/pve/local
+            echo -e "[RULES]\nIN ACCEPT -p tcp -dport 443 -log nolog" >> /etc/pve/local/host.fw
+            echo changed
+          else
+            echo ok
+          fi
+        else
+          echo skip
+        fi
+      register: fw_result
+      changed_when: "'changed' in fw_result.stdout"
+
+  handlers:
+    - name: restart pveproxy
+      service:
+        name: pveproxy
+        state: restarted

@@ -12,5 +12,14 @@ jobs:
     environment: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Hello World"
-      - run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-postinstall.yml
+
+      - name: Post-install Proxmox
+        run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-postinstall.yml
+
+      - name: Configurar ACME + HTTPS 443
+        env:
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          PROXMOX_HOST: ${{ vars.PROXMOX_HOST }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+        run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-acme.yml
