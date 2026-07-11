@@ -34,7 +34,6 @@
     - name: Configurar domínio ACME no node
       command: >
         pvenode config set
-        --acme domains={{ acme_domain }}
         --acmedomain0 domain={{ acme_domain }},plugin=route53
 
     - name: Solicitar certificado via ACME
