@@ -47,6 +47,25 @@
         --acmedomain0 domain={{ acme_domain }},plugin=route53
       changed_when: true
 
+    - name: Verificar se certificado válido já existe
+      ansible.builtin.shell: |
+        set -o pipefail
+        if [ -f /etc/pve/local/pveproxy-ssl.pem ]; then
+          EXPIRY=$(openssl x509 -in /etc/pve/local/pveproxy-ssl.pem -noout -enddate 2>/dev/null | cut -d= -f2)
+          EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s 2>/dev/null || echo 0)
+          NOW_EPOCH=$(date +%s)
+          DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+          if [ "$DAYS_LEFT" -gt 30 ]; then
+            echo "skip"
+            exit 0
+          fi
+        fi
+        echo "renew"
+      args:
+        executable: /bin/bash
+      register: cert_check
+      changed_when: false
+
     - name: Solicitar certificado via ACME
       ansible.builtin.command: pvenode acme cert order --force
       register: acme_order
@@ -54,3 +73,4 @@
       delay: 30
       until: acme_order.rc == 0
       changed_when: acme_order.rc == 0
+      when: "'renew' in cert_check.stdout"
