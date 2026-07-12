@@ -83,6 +83,5 @@ jobs:
 
       - name: Aplicar customização visual
         env:
-          ENV_NAME: ${{ vars.ENV_NAME }}
-          ENV_COLOR: ${{ vars.ENV_COLOR }}
+          ENV_COLOR: ${{ github.ref_name == 'prod' && '#c62828' || '#1565c0' }}
         run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-ui.yml

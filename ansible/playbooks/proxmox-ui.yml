@@ -3,7 +3,6 @@
   hosts: all
   any_errors_fatal: true
   vars:
-    env_name: "{{ lookup('env', 'ENV_NAME') }}"
     env_color: "{{ lookup('env', 'ENV_COLOR') }}"
   tasks:
     - name: Definir cor da barra superior
@@ -26,11 +25,6 @@
         line: '    <link rel="stylesheet" type="text/css" href="/pve2/css/custom.css">'
         state: present
       notify: restart pveproxy
-
-    - name: Configurar nome do Datacenter
-      ansible.builtin.command: >
-        pvesh set /cluster/options --description "{{ env_name }}"
-      changed_when: true
 
   handlers:
     - name: Restart pveproxy
