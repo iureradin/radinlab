@@ -59,9 +59,7 @@ resource "proxmox_virtual_environment_container" "npm" {
     bridge = "vmbr0"
   }
 
-  features {
-    nesting = true
-  }
+  unprivileged = true
 
   started = true
 }
