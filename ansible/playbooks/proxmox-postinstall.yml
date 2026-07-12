@@ -1,37 +1,39 @@
-- hosts: all
+---
+- name: Proxmox Post-Install
+  hosts: all
   any_errors_fatal: true
   tasks:
     - name: Verificar se repo enterprise existe
-      stat:
+      ansible.builtin.stat:
         path: /etc/apt/sources.list.d/pve-enterprise.sources
       register: pve_enterprise
 
     - name: Desabilitar repo enterprise
-      replace:
+      ansible.builtin.replace:
         path: /etc/apt/sources.list.d/pve-enterprise.sources
         regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
         replace: '#\1'
       when: pve_enterprise.stat.exists
 
     - name: Verificar se repo Ceph enterprise existe
-      stat:
+      ansible.builtin.stat:
         path: /etc/apt/sources.list.d/ceph.sources
       register: ceph_enterprise
 
     - name: Desabilitar repo Ceph enterprise
-      replace:
+      ansible.builtin.replace:
         path: /etc/apt/sources.list.d/ceph.sources
         regexp: '^(Types:|URIs:|Suites:|Components:|Signed-By:)'
         replace: '#\1'
       when: ceph_enterprise.stat.exists
 
     - name: Verificar se repo no-subscription já existe
-      stat:
+      ansible.builtin.stat:
         path: /etc/apt/sources.list.d/pve-no-subscription.sources
       register: pve_nosub
 
     - name: Adicionar repo no-subscription
-      copy:
+      ansible.builtin.copy:
         dest: /etc/apt/sources.list.d/pve-no-subscription.sources
         content: |
           Types: deb
@@ -39,10 +41,12 @@
           Suites: trixie
           Components: pve-no-subscription
           Signed-By: /usr/share/keyrings/proxmox-archive-keyring.gpg
+        mode: "0644"
       when: not pve_nosub.stat.exists
 
     - name: Remover nag de subscription
-      shell: |
+      ansible.builtin.shell: |
+        set -o pipefail
         FILE=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
         if [ ! -f "$FILE" ]; then
           echo "skip"
@@ -56,17 +60,20 @@
         else
           echo ok
         fi
+      args:
+        executable: /bin/bash
       register: nag_result
       changed_when: "'changed' in nag_result.stdout"
       notify: restart pveproxy
 
     - name: Atualizar pacotes
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
-        update_cache: yes
+        update_cache: true
 
   handlers:
-    - name: restart pveproxy
-      service:
+    - name: Restart pveproxy
+      ansible.builtin.service:
         name: pveproxy
         state: restarted
+      listen: restart pveproxy
