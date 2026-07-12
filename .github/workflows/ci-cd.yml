@@ -135,12 +135,21 @@ jobs:
             if [ -n "$IP" ]; then
               echo "npm_ip=$IP" >> $GITHUB_OUTPUT
               echo "Container IP: $IP"
-              exit 0
+              break
             fi
             sleep 5
           done
-          echo "::error::Timeout esperando IP do container"
-          exit 1
+          if [ -z "$IP" ]; then
+            echo "::error::Timeout esperando IP do container"
+            exit 1
+          fi
+
+      - name: Configurar SSH no container
+        working-directory: terraform/npm
+        run: |
+          CT_ID=$(terraform output -raw npm_container_id)
+          RUNNER_KEY=$(cat ~/.ssh/id_ed25519.pub)
+          ssh -o StrictHostKeyChecking=no root@${{ vars.PROXMOX_HOST }} "pct exec $CT_ID -- bash -c 'mkdir -p /root/.ssh && echo \"$RUNNER_KEY\" >> /root/.ssh/authorized_keys && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys'"
 
     outputs:
       npm_ip: ${{ steps.npm-ip.outputs.npm_ip }}
