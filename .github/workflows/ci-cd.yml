@@ -69,3 +69,20 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
         run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-acme.yml
+
+  proxmox-ui:
+    name: Customizar Interface
+    needs: proxmox-postinstall
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 5
+    environment: ${{ github.ref_name }}
+    env:
+      ANSIBLE_HOST_KEY_CHECKING: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Aplicar customização visual
+        env:
+          ENV_NAME: ${{ vars.ENV_NAME }}
+          ENV_COLOR: ${{ vars.ENV_COLOR }}
+        run: ansible-playbook -i "${{ vars.PROXMOX_HOST }}," -u root ansible/playbooks/proxmox-ui.yml

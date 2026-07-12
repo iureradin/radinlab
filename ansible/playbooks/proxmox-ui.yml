@@ -1,0 +1,40 @@
+---
+- name: Customizar interface Proxmox
+  hosts: all
+  any_errors_fatal: true
+  vars:
+    env_name: "{{ lookup('env', 'ENV_NAME') }}"
+    env_color: "{{ lookup('env', 'ENV_COLOR') }}"
+  tasks:
+    - name: Definir cor da barra superior
+      ansible.builtin.copy:
+        dest: /usr/share/pve-manager/css/custom.css
+        content: |
+          .x-toolbar.x-docked-top {
+            background-color: {{ env_color }} !important;
+          }
+          .x-toolbar.x-docked-top .x-btn-inner {
+            color: #ffffff !important;
+          }
+        mode: "0644"
+      notify: restart pveproxy
+
+    - name: Injetar CSS customizado no index
+      ansible.builtin.lineinfile:
+        path: /usr/share/pve-manager/index.html.tpl
+        insertbefore: "</head>"
+        line: '    <link rel="stylesheet" type="text/css" href="/pve2/css/custom.css">'
+        state: present
+      notify: restart pveproxy
+
+    - name: Configurar nome do Datacenter
+      ansible.builtin.command: >
+        pvesh set /cluster/options --description "{{ env_name }}"
+      changed_when: true
+
+  handlers:
+    - name: Restart pveproxy
+      ansible.builtin.service:
+        name: pveproxy
+        state: restarted
+      listen: restart pveproxy
