@@ -16,13 +16,14 @@ jobs:
 
       - name: Install ansible-lint
         run: |
-          if ! command -v pip3 &>/dev/null; then
+          export PATH="/usr/local/bin:$PATH"
+          if ! command -v ansible-lint &>/dev/null; then
             sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip
+            pip3 install ansible-lint --break-system-packages --ignore-installed ansible-core
           fi
-          pip3 install ansible-lint --quiet --break-system-packages
 
       - name: Run ansible-lint
-        run: ansible-lint ansible/playbooks/*.yml
+        run: /usr/local/bin/ansible-lint ansible/playbooks/*.yml
 
   proxmox-postinstall:
     name: Proxmox Post-Install
