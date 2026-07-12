@@ -30,7 +30,6 @@ jobs:
     needs: lint
     runs-on: [self-hosted, prod]
     timeout-minutes: 10
-    if: github.ref_name == 'prod' || github.ref_name == 'dev'
     environment: ${{ github.ref_name }}
     env:
       ANSIBLE_HOST_KEY_CHECKING: "false"
