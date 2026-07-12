@@ -14,3 +14,9 @@ variable "proxmox_node" {
   type        = string
   default     = "pve"
 }
+
+variable "template_name" {
+  description = "Nome do template LXC (deve existir em local:vztmpl/)"
+  type        = string
+  default     = "ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
+}

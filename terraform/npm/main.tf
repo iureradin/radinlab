@@ -21,22 +21,13 @@ provider "proxmox" {
   insecure  = true
 }
 
-resource "proxmox_virtual_environment_download_file" "ubuntu_template" {
-  content_type = "vztmpl"
-  datastore_id = "local"
-  node_name    = var.proxmox_node
-
-  url       = "http://download.proxmox.com/images/system/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
-  file_name = "ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
-}
-
 resource "proxmox_virtual_environment_container" "npm" {
   node_name   = var.proxmox_node
   description = "Nginx Proxy Manager"
   tags        = ["npm", "managed-by-terraform"]
 
   operating_system {
-    template_file_id = proxmox_virtual_environment_download_file.ubuntu_template.id
+    template_file_id = "local:vztmpl/${var.template_name}"
     type             = "ubuntu"
   }
 
