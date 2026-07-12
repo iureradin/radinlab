@@ -61,6 +61,10 @@ resource "proxmox_virtual_environment_container" "npm" {
 
   unprivileged = true
 
+  features {
+    nesting = true
+  }
+
   started = true
 }
 
