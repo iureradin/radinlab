@@ -7,20 +7,20 @@
 proxmox_insecure = true
 
 # --- Container Configuration
-proxmox_node          = "pve"
+proxmox_node          = "naruto"
 container_vmid        = 110
 container_hostname    = "immich"
 container_description = "Immich Photo Management - Managed by Terraform"
 container_tags        = ["immich", "docker", "terraform"]
 
 # --- Operating System
-os_template = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+os_template = "local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst"
 
 # --- Resources
 cpu_cores         = 4
 memory_mb         = 8192
 root_disk_size_gb = 50
-root_datastore    = "local-lvm"
+root_datastore    = "ssd-vms"
 
 # --- Photo Storage (500GB from 4TB disk)
 photos_mount_volume = "/dev/sdb1"
