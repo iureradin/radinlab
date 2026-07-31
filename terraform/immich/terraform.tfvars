@@ -22,10 +22,8 @@ memory_mb         = 8192
 root_disk_size_gb = 50
 root_datastore    = "ssd-vms"
 
-# --- Photo Storage (volume on hdd-storage, 4TB disk)
-photos_mount_volume = "hdd-storage"
-photos_mount_path   = "/mnt/photos"
-photos_mount_size   = "500G"
+# --- Photo Storage (bind mount added post-provision via pct config)
+# Host: /mnt/hd4tb/immich -> Container: /mnt/photos (same pattern as Jellyfin)
 
 # --- Network
 network_bridge = "vmbr0"

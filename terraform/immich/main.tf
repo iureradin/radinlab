@@ -22,15 +22,6 @@ module "immich_container" {
   root_datastore    = var.root_datastore
   root_disk_size_gb = var.root_disk_size_gb
 
-  # --- Mount Points
-  mount_points = [
-    {
-      volume = var.photos_mount_volume
-      path   = var.photos_mount_path
-      size   = var.photos_mount_size
-    }
-  ]
-
   # --- Network
   network_bridge = var.network_bridge
   ipv4_address   = var.ipv4_address

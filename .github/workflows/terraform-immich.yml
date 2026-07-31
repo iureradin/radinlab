@@ -123,10 +123,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Add bind mount and keyctl (requires root on host)
+        run: |
+          # Stop container to modify config
+          pct stop 110 2>/dev/null || true
+          sleep 3
+
+          # Add bind mount for photos (same pattern as Jellyfin)
+          if ! grep -q "mp0:" /etc/pve/lxc/110.conf; then
+            echo "mp0: /mnt/hd4tb/immich,mp=/mnt/photos" >> /etc/pve/lxc/110.conf
+          fi
+
+          # Add keyctl feature (needed for Docker)
+          sed -i 's/features: nesting=1/features: nesting=1,keyctl=1/' /etc/pve/lxc/110.conf
+
+          # Create host directory for photos
+          mkdir -p /mnt/hd4tb/immich
+
+          # Start container
+          pct start 110
+          sleep 10
+
       - name: Wait for container network
         run: |
           echo "Waiting for container to get network..."
-          sleep 10
+          for i in $(seq 1 30); do
+            if ping -c1 -W1 ${{ vars.IMMICH_HOST }} &>/dev/null; then
+              echo "Container reachable at ${{ vars.IMMICH_HOST }}"
+              break
+            fi
+            sleep 2
+          done
 
       - name: Setup Docker on LXC
         run: |
