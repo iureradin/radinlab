@@ -1,0 +1,141 @@
+# ---
+# Terraform Immich - Provision LXC Container
+# Follows radinlab conventions: self-hosted runner, branches prod/dev
+# ---
+
+name: Terraform Immich
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - prod
+      - dev
+    paths:
+      - 'terraform/immich/**'
+      - 'scripts/setup-docker.sh'
+      - 'scripts/setup-immich.sh'
+  pull_request:
+    branches:
+      - prod
+      - dev
+    paths:
+      - 'terraform/immich/**'
+      - 'scripts/setup-docker.sh'
+      - 'scripts/setup-immich.sh'
+
+env:
+  TF_VERSION: "1.9.0"
+  WORKING_DIR: "terraform/immich"
+
+jobs:
+  # --- Validate and Plan
+  plan:
+    name: Terraform Plan
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 10
+    environment: ${{ github.ref_name }}
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        env:
+          PROXMOX_VE_ENDPOINT: ${{ secrets.PROXMOX_API_URL }}
+          PROXMOX_VE_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -input=false -out=tfplan
+        env:
+          TF_VAR_proxmox_api_url: ${{ secrets.PROXMOX_API_URL }}
+          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+          TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
+
+  # --- Apply (only on push to prod/dev, not PRs)
+  apply:
+    name: Terraform Apply
+    needs: plan
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 15
+    environment: ${{ github.ref_name }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        env:
+          PROXMOX_VE_ENDPOINT: ${{ secrets.PROXMOX_API_URL }}
+          PROXMOX_VE_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false
+        env:
+          TF_VAR_proxmox_api_url: ${{ secrets.PROXMOX_API_URL }}
+          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+          TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
+
+  # --- Post-provision: Setup Docker + Immich
+  provision:
+    name: Provision Immich
+    needs: apply
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 15
+    environment: ${{ github.ref_name }}
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for container network
+        run: |
+          echo "Waiting for container to get network..."
+          sleep 10
+
+      - name: Get container IP
+        id: get_ip
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init -input=false
+          IP=$(terraform output -raw container_id 2>/dev/null || echo "")
+          echo "container_id=${IP}" >> $GITHUB_OUTPUT
+        env:
+          TF_VAR_proxmox_api_url: ${{ secrets.PROXMOX_API_URL }}
+          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+          TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
+
+      - name: Setup Docker on LXC
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} 'bash -s' < scripts/setup-docker.sh
+
+      - name: Deploy Immich
+        env:
+          DB_PASSWORD: ${{ secrets.IMMICH_DB_PASSWORD }}
+          IMMICH_VERSION: "release"
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} \
+            "DB_PASSWORD='${DB_PASSWORD}' IMMICH_VERSION='${IMMICH_VERSION}' bash -s" < scripts/setup-immich.sh
