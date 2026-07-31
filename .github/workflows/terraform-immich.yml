@@ -42,6 +42,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          if ! command -v unzip &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -80,6 +86,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          if ! command -v unzip &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
