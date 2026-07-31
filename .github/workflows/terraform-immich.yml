@@ -125,6 +125,7 @@ jobs:
 
       - name: Add bind mount and keyctl (requires root on host)
         run: |
+          ssh -o StrictHostKeyChecking=no root@${{ vars.PROXMOX_HOST }} bash <<'SCRIPT'
           # Stop container to modify config
           pct stop 110 2>/dev/null || true
           sleep 3
@@ -143,6 +144,7 @@ jobs:
           # Start container
           pct start 110
           sleep 10
+          SCRIPT
 
       - name: Wait for container network
         run: |
