@@ -8,7 +8,7 @@ proxmox_insecure = true
 
 # --- Container Configuration
 proxmox_node          = "pve"
-container_vmid        = 0
+container_vmid        = 110
 container_hostname    = "immich"
 container_description = "Immich Photo Management - Managed by Terraform"
 container_tags        = ["immich", "docker", "terraform"]
