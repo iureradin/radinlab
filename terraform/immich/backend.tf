@@ -1,10 +1,12 @@
 # ---
 # Immich - Backend Configuration
-# Using local backend (switch to remote as needed)
+# Remote state stored in S3
 # ---
 
 terraform {
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "s3" {
+    bucket = "radinlab-terraform-state"
+    key    = "prod/immich/terraform.tfstate"
+    region = "us-east-1"
   }
 }
