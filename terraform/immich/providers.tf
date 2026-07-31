@@ -1,5 +1,8 @@
 # ---
 # Immich - Provider Configuration
+# Authentication via environment variables:
+#   PROXMOX_VE_ENDPOINT  = https://naruto.local:8006
+#   PROXMOX_VE_API_TOKEN = user@realm!tokenid=secret
 # ---
 
 provider "proxmox" {
