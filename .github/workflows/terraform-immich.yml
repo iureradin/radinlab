@@ -67,9 +67,9 @@ jobs:
         run: terraform plan -no-color -input=false -out=tfplan
         env:
           PROXMOX_VE_ENDPOINT: ${{ vars.PROXMOX_ENDPOINT }}
-          PROXMOX_VE_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+          PROXMOX_VE_API_TOKEN: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_proxmox_api_url: ${{ vars.PROXMOX_ENDPOINT }}
-          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+          TF_VAR_proxmox_api_token: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
 
   # --- Apply (only on push to prod/dev, not PRs)
@@ -106,9 +106,9 @@ jobs:
         run: terraform apply -auto-approve -input=false
         env:
           PROXMOX_VE_ENDPOINT: ${{ vars.PROXMOX_ENDPOINT }}
-          PROXMOX_VE_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+          PROXMOX_VE_API_TOKEN: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_proxmox_api_url: ${{ vars.PROXMOX_ENDPOINT }}
-          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
+          TF_VAR_proxmox_api_token: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
 
   # --- Post-provision: Setup Docker + Immich
