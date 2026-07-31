@@ -41,7 +41,7 @@ module "immich_container" {
 
   # --- Features (Docker support)
   enable_nesting = true
-  enable_keyctl  = true
+  enable_keyctl  = false
   unprivileged   = true
 
   # --- Boot
