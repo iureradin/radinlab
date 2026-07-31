@@ -44,8 +44,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if ! command -v unzip &>/dev/null; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          if ! command -v unzip &>/dev/null || ! command -v node &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq unzip nodejs
           fi
 
       - name: Setup Terraform
@@ -89,8 +90,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if ! command -v unzip &>/dev/null; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          if ! command -v unzip &>/dev/null || ! command -v node &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq unzip nodejs
           fi
 
       - name: Setup Terraform
@@ -127,18 +129,6 @@ jobs:
         run: |
           echo "Waiting for container to get network..."
           sleep 10
-
-      - name: Get container IP
-        id: get_ip
-        working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          terraform init -input=false
-          IP=$(terraform output -raw container_id 2>/dev/null || echo "")
-          echo "container_id=${IP}" >> $GITHUB_OUTPUT
-        env:
-          TF_VAR_proxmox_api_url: ${{ secrets.PROXMOX_API_URL }}
-          TF_VAR_proxmox_api_token: ${{ secrets.PROXMOX_API_TOKEN }}
-          TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
 
       - name: Setup Docker on LXC
         run: |
