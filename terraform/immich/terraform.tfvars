@@ -3,7 +3,7 @@
 # ---
 
 # --- Proxmox Connection
-proxmox_api_url  = "https://10.0.0.70:8006"
+# proxmox_api_url comes from TF_VAR_proxmox_api_url (GitHub vars.PROXMOX_ENDPOINT)
 proxmox_insecure = true
 
 # --- Container Configuration
