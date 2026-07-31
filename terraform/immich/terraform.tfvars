@@ -22,8 +22,8 @@ memory_mb         = 8192
 root_disk_size_gb = 50
 root_datastore    = "ssd-vms"
 
-# --- Photo Storage (500GB from 4TB disk)
-photos_mount_volume = "/dev/sdb1"
+# --- Photo Storage (volume on hdd-storage, 4TB disk)
+photos_mount_volume = "hdd-storage"
 photos_mount_path   = "/mnt/photos"
 photos_mount_size   = "500G"
 
