@@ -4,7 +4,7 @@
 # Mantém no máximo 3 snapshots por VM/container
 # Uso: ./daily_snapshot.sh
 
-set -euo pipefail
+set -uo pipefail
 
 SNAPSHOT_TAG="daily_snapshot"
 MAX_SNAPSHOTS=3
@@ -12,16 +12,28 @@ SNAPSHOT_NAME="auto_$(date +%d%m%Y_%H%M)"
 ERRORS=()
 SUCCESS=()
 
+# Telegram
+TELEGRAM_BOT_TOKEN="8846315620:AAEPbRUFRIK6tOSI5HwtHjNEIJ_oHAglznM"
+TELEGRAM_CHAT_ID="620923420"
+
 log() {
     echo "[$(date '+%d/%m/%Y %H:%M:%S')] $1"
 }
 
+telegram_alert() {
+    local message="$1"
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d "chat_id=${TELEGRAM_CHAT_ID}" \
+        -d "text=${message}" \
+        > /dev/null 2>&1 || true
+}
+
 # Busca containers LXC com a tag daily_snapshot
 get_tagged_cts() {
-    pct list | tail -n +2 | awk '{print $1}' | while read -r vmid; do
+    pct list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
         local tags name
-        name=$(pct config "$vmid" | grep -oP '^hostname:\s*\K.*' || echo "$vmid")
-        tags=$(pct config "$vmid" | grep -oP '^tags:\s*\K.*' || true)
+        name=$(pct config "$vmid" 2>/dev/null | grep -oP '^hostname:\s*\K.*' || echo "$vmid")
+        tags=$(pct config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
         if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
             echo "ct:$vmid:$name"
         fi
@@ -32,8 +44,8 @@ get_tagged_cts() {
 get_tagged_vms() {
     qm list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
         local tags name
-        name=$(qm config "$vmid" | grep -oP '^name:\s*\K.*' || echo "$vmid")
-        tags=$(qm config "$vmid" | grep -oP '^tags:\s*\K.*' || true)
+        name=$(qm config "$vmid" 2>/dev/null | grep -oP '^name:\s*\K.*' || echo "$vmid")
+        tags=$(qm config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
         if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
             echo "vm:$vmid:$name"
         fi
@@ -46,21 +58,22 @@ create_snapshot() {
 
     log "Criando snapshot '$SNAPSHOT_NAME' para $type $vmid ($name)..."
 
+    local output
     if [[ "$type" == "ct" ]]; then
-        if pct snapshot "$vmid" "$SNAPSHOT_NAME" --description "Auto snapshot $(date '+%d/%m/%Y %H:%M')"; then
+        if output=$(pct snapshot "$vmid" "$SNAPSHOT_NAME" --description "Auto snapshot $(date '+%d/%m/%Y %H:%M')" 2>&1); then
             log "✓ Snapshot criado: $type $vmid ($name)"
             SUCCESS+=("$type $vmid ($name)")
         else
-            log "✗ ERRO ao criar snapshot: $type $vmid ($name)"
-            ERRORS+=("$type $vmid ($name): falha ao criar snapshot")
+            log "✗ ERRO ao criar snapshot: $type $vmid ($name) — $output"
+            ERRORS+=("$type $vmid ($name): $output")
         fi
     elif [[ "$type" == "vm" ]]; then
-        if qm snapshot "$vmid" "$SNAPSHOT_NAME" --description "Auto snapshot $(date '+%d/%m/%Y %H:%M')"; then
+        if output=$(qm snapshot "$vmid" "$SNAPSHOT_NAME" --description "Auto snapshot $(date '+%d/%m/%Y %H:%M')" 2>&1); then
             log "✓ Snapshot criado: $type $vmid ($name)"
             SUCCESS+=("$type $vmid ($name)")
         else
-            log "✗ ERRO ao criar snapshot: $type $vmid ($name)"
-            ERRORS+=("$type $vmid ($name): falha ao criar snapshot")
+            log "✗ ERRO ao criar snapshot: $type $vmid ($name) — $output"
+            ERRORS+=("$type $vmid ($name): $output")
         fi
     fi
 }
@@ -73,9 +86,9 @@ cleanup_snapshots() {
 
     local snapshots
     if [[ "$type" == "ct" ]]; then
-        snapshots=$(pct listsnapshot "$vmid" | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort)
+        snapshots=$(pct listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
     elif [[ "$type" == "vm" ]]; then
-        snapshots=$(qm listsnapshot "$vmid" | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort)
+        snapshots=$(qm listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
     fi
 
     local count
@@ -89,9 +102,9 @@ cleanup_snapshots() {
             [[ -z "$snap" ]] && continue
             log "Removendo snapshot antigo '$snap' de $type $vmid ($name)..."
             if [[ "$type" == "ct" ]]; then
-                pct delsnapshot "$vmid" "$snap" || ERRORS+=("$type $vmid ($name): falha ao remover $snap")
+                pct delsnapshot "$vmid" "$snap" 2>/dev/null || ERRORS+=("$type $vmid ($name): falha ao remover $snap")
             elif [[ "$type" == "vm" ]]; then
-                qm delsnapshot "$vmid" "$snap" || ERRORS+=("$type $vmid ($name): falha ao remover $snap")
+                qm delsnapshot "$vmid" "$snap" 2>/dev/null || ERRORS+=("$type $vmid ($name): falha ao remover $snap")
             fi
         done <<< "$to_delete"
     fi
@@ -134,6 +147,21 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
     for err in "${ERRORS[@]}"; do
         log "  - $err"
     done
+
+    # Monta mensagem de alerta
+    ERROR_LIST=""
+    for err in "${ERRORS[@]}"; do
+        ERROR_LIST="${ERROR_LIST}- ${err}\n"
+    done
+
+    telegram_alert "[RadinLab] Snapshot com erros
+
+Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]}
+Data: $(date '+%d/%m/%Y %H:%M')
+
+Erros:
+${ERROR_LIST}"
+
     exit 1
 fi
 
