@@ -158,9 +158,28 @@ create_snapshot_jellyfin() {
         ERRORS+=("ct $vmid ($name): $output")
     fi
 
-    # Restaura config original antes de reiniciar
-    log "  Restaurando config original..."
-    cp "$conf_backup" "$conf_file"
+    # Restaura config original antes de reiniciar, preservando seções de snapshot
+    # que o pct snapshot gravou no arquivo durante a operação
+    log "  Restaurando config original (preservando metadados de snapshot)..."
+
+    # Extrai seções de snapshot geradas pelo pct snapshot (linhas [snapname] e posteriores)
+    local snap_sections
+    snap_sections=$(awk '/^\[/{found=1} found{print}' "$conf_file" 2>/dev/null || true)
+
+    # Restaura config original (sem seções de snapshot)
+    grep -v '^\[' "$conf_backup" > "$conf_file" || cp "$conf_backup" "$conf_file"
+
+    # Adiciona parent e snaptime da config atual (gerados pelo pct snapshot)
+    local parent_line snaptime_line
+    parent_line=$(grep '^parent:' "$conf_file.pre_restore" 2>/dev/null || grep '^parent:' "$conf_file" 2>/dev/null || true)
+
+    # Re-anexa as seções de snapshot preservadas
+    if [[ -n "$snap_sections" ]]; then
+        echo "" >> "$conf_file"
+        echo "$snap_sections" >> "$conf_file"
+        log "  Metadados de snapshot preservados."
+    fi
+
     rm -f "$conf_backup"
 
     # Reinicia container
