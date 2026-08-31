@@ -305,6 +305,28 @@
       register: compose_ps
       changed_when: false
 
+    - name: Criar admin no primeiro acesso (idempotente)
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/auth/admin-sign-up"
+        method: POST
+        body_format: json
+        body:
+          email: "{{ immich_admin_email }}"
+          password: "{{ immich_admin_password }}"
+          name: "{{ immich_admin_name }}"
+        status_code: [200, 201, 400]  # 400 = admin já existe
+        return_content: true
+      register: signup_result
+
+    - name: Resultado do signup
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'Admin já existia — nenhuma alteração feita'
+            if signup_result.status == 400
+            else 'Admin criado com sucesso: ' + immich_admin_email
+          }}
+
     - name: Deploy concluído
       ansible.builtin.debug:
         msg: |

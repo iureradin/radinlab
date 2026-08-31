@@ -235,4 +235,7 @@ jobs:
             -i /tmp/inventory-immich.yml \
             ansible/playbooks/immich-provision.yml \
             -e immich_db_password="${{ secrets.IMMICH_DB_PASSWORD }}" \
-            -e runner_key_file="${PROXMOX_KEY_DST}"
+            -e runner_key_file="${PROXMOX_KEY_DST}" \
+            -e immich_admin_email="${{ vars.IMMICH_ADMIN_EMAIL }}" \
+            -e immich_admin_name="${{ vars.IMMICH_ADMIN_NAME }}" \
+            -e immich_admin_password="${{ secrets.IMMICH_ADMIN_PASSWORD }}"
