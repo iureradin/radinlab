@@ -31,9 +31,9 @@ module "immich_container" {
   root_password   = var.root_password
 
   # --- Features (Docker support)
-  # keyctl=1 é obrigatório para Docker funcionar em LXC unprivileged no Proxmox
+  # keyctl não pode ser definido via API token — será adicionado via SSH no provision step
   enable_nesting = true
-  enable_keyctl  = true
+  enable_keyctl  = false
   unprivileged   = true
 
   # --- Boot
