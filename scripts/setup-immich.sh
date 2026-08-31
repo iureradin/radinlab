@@ -27,7 +27,7 @@ mkdir -p "${DB_DATA_LOCATION}"
 echo "Baixando docker-compose.yml oficial do Immich ${IMMICH_VERSION}..."
 
 # Resolve a tag de release para buscar o compose correto
-RELEASE_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+RELEASE_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
 echo "Release encontrado: ${RELEASE_TAG}"
 
 curl -fsSL "https://github.com/immich-app/immich/releases/download/${RELEASE_TAG}/docker-compose.yml" \
