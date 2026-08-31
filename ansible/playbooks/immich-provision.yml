@@ -242,13 +242,10 @@
         headers:
           Accept: "application/vnd.github.v3+json"
       register: immich_release_api
-      when: immich_version in ['latest', 'release']
 
-    - name: Definir release tag efetiva
+    - name: Definir release tag efetiva (sempre usa a última release)
       ansible.builtin.set_fact:
-        effective_release_tag: >-
-          {{ (immich_version in ['latest', 'release'])
-             | ternary(immich_release_api.json.tag_name, immich_version) }}
+        effective_release_tag: "{{ immich_release_api.json.tag_name }}"
 
     - name: Baixar docker-compose.yml oficial do release
       ansible.builtin.get_url:
