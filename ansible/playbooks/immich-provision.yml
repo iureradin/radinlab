@@ -98,8 +98,9 @@
 
     - name: Atualizar known_hosts do runner para o CT
       ansible.builtin.shell: |
-        ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "{{ immich_ip }}" 2>/dev/null || true
-        ssh-keyscan -H "{{ immich_ip }}" >> /home/runner/.ssh/known_hosts 2>/dev/null
+        mkdir -p /root/.ssh
+        ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ immich_ip }}" 2>/dev/null || true
+        ssh-keyscan -H "{{ immich_ip }}" >> /root/.ssh/known_hosts 2>/dev/null
       args:
         executable: /bin/bash
       changed_when: true

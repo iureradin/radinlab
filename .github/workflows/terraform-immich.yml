@@ -202,6 +202,11 @@ jobs:
           IMMICH_VERSION: "v3"
           ANSIBLE_HOST_KEY_CHECKING: "false"
         run: |
+          # Atualiza known_hosts do runner para o CT (necessário após recreate)
+          mkdir -p /home/runner/.ssh
+          ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "${{ vars.IMMICH_HOST }}" 2>/dev/null || true
+          ssh-keyscan -H "${{ vars.IMMICH_HOST }}" >> /home/runner/.ssh/known_hosts 2>/dev/null
+
           RUNNER_PUBKEY=$(cat /home/runner/.ssh/id_ed25519.pub 2>/dev/null || \
                           cat /home/runner/.ssh/id_rsa.pub 2>/dev/null || echo "")
 
