@@ -79,7 +79,7 @@
         host: "{{ immich_ip }}"
         port: 22
         delay: 5
-        timeout: 60
+        timeout: 90
         state: started
 
     - name: Injetar chave SSH do runner no CT via pct push
@@ -121,8 +121,9 @@
   tasks:
     - name: Aguardar SSH disponível no CT
       ansible.builtin.wait_for_connection:
-        timeout: 60
-        delay: 3
+        timeout: 120
+        delay: 5
+        sleep: 3
 
     - name: Verificar se Docker já está instalado e funcional
       ansible.builtin.command: docker compose version
