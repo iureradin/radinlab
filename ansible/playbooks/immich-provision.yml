@@ -81,9 +81,8 @@
     - name: Injetar chave SSH do runner no CT via pct exec
       ansible.builtin.shell: |
         set -euo pipefail
-        RUNNER_KEY=$(cat /home/runner/.ssh/id_ed25519.pub 2>/dev/null || \
-                     cat /home/runner/.ssh/id_rsa.pub 2>/dev/null || echo "")
-        [ -z "$RUNNER_KEY" ] && { echo "Nenhuma chave encontrada"; exit 1; }
+        RUNNER_KEY="{{ runner_ssh_pubkey }}"
+        [ -z "$RUNNER_KEY" ] && { echo "runner_ssh_pubkey não definida"; exit 1; }
         pct exec {{ ct_id }} -- bash -c "
           mkdir -p /root/.ssh
           chmod 700 /root/.ssh
@@ -91,6 +90,7 @@
           grep -qF '$RUNNER_KEY' /root/.ssh/authorized_keys || \
             echo '$RUNNER_KEY' >> /root/.ssh/authorized_keys
           chmod 600 /root/.ssh/authorized_keys
+          echo OK
         "
       args:
         executable: /bin/bash
