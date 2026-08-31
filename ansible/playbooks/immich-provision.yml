@@ -74,9 +74,13 @@
     - name: Iniciar CT
       ansible.builtin.command: pct start {{ ct_id }}
 
-    - name: Aguardar CT inicializar
-      ansible.builtin.pause:
-        seconds: 12
+    - name: Aguardar CT inicializar e SSH ficar disponível
+      ansible.builtin.wait_for:
+        host: "{{ immich_ip }}"
+        port: 22
+        delay: 5
+        timeout: 60
+        state: started
 
     - name: Injetar chave SSH do runner no CT via pct exec
       ansible.builtin.shell: |
@@ -115,6 +119,11 @@
   any_errors_fatal: true
 
   tasks:
+    - name: Aguardar SSH disponível no CT
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+        delay: 3
+
     - name: Verificar se Docker já está instalado e funcional
       ansible.builtin.command: docker compose version
       register: docker_check
