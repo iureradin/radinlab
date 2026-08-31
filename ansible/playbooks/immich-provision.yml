@@ -115,7 +115,7 @@
 # ===========================================================================
 - name: Instalar Docker CE no CT Immich
   hosts: immich         # SOMENTE CT 110 (10.0.0.76)
-  gather_facts: true
+  gather_facts: false   # desabilitado — feito manualmente após wait_for_connection
   any_errors_fatal: true
 
   tasks:
@@ -124,6 +124,9 @@
         timeout: 120
         delay: 5
         sleep: 3
+
+    - name: Coletar facts após SSH disponível
+      ansible.builtin.setup:
 
     - name: Verificar se Docker já está instalado e funcional
       ansible.builtin.command: docker compose version
@@ -207,7 +210,6 @@
   hosts: immich         # SOMENTE CT 110 (10.0.0.76)
   gather_facts: false
   any_errors_fatal: true
-  vars:
     immich_dir: "/opt/immich"
     upload_location: "/var/lib/immich/upload"
     db_data_location: "/var/lib/immich/pgdata"
