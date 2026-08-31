@@ -207,11 +207,11 @@ jobs:
           RUNNER_KEY_SRC="/home/runner/.ssh/id_ed25519.pub"
           PROXMOX_KEY_DST="/tmp/runner_immich_ct.pub"
 
-          # Atualiza known_hosts do runner para Proxmox e CT
+          # Atualiza known_hosts do runner para o Proxmox
           mkdir -p /home/runner/.ssh
-          ssh-keyscan -H "${PROXMOX_IP}" >> /home/runner/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "${PROXMOX_IP}" >> /home/runner/.ssh/known_hosts 2>/dev/null || true
+          # CT recém criado pode não ter SSH pronto — remove entrada antiga do known_hosts
           ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "${IMMICH_IP}" 2>/dev/null || true
-          ssh-keyscan -H "${IMMICH_IP}" >> /home/runner/.ssh/known_hosts 2>/dev/null
 
           # Copia a chave pública para o Proxmox host (evita problemas de escape)
           scp -o StrictHostKeyChecking=no "${RUNNER_KEY_SRC}" "root@${PROXMOX_IP}:${PROXMOX_KEY_DST}"
