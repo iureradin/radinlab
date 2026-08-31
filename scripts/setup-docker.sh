@@ -5,6 +5,14 @@
 # ---
 set -euo pipefail
 
+# --- Se Docker já está instalado, pula instalação
+if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+  echo "Docker já instalado: $(docker --version)"
+  echo "Docker Compose: $(docker compose version)"
+  echo "=== Nada a fazer ==="
+  exit 0
+fi
+
 echo "=== Installing Docker CE on Ubuntu 22.04 ==="
 
 # --- Update system packages
