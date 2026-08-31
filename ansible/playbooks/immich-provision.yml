@@ -210,7 +210,7 @@
   hosts: immich         # SOMENTE CT 110 (10.0.0.76)
   gather_facts: false
   any_errors_fatal: true
-    immich_dir: "/opt/immich"
+  vars:
     upload_location: "/var/lib/immich/upload"
     db_data_location: "/var/lib/immich/pgdata"
     immich_version: "{{ lookup('env', 'IMMICH_VERSION') | default('v3', true) }}"
