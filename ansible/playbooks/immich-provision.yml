@@ -329,6 +329,87 @@
             else 'Admin criado com sucesso: ' + immich_admin_email
           }}
 
+    - name: Login como admin para obter token
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/auth/login"
+        method: POST
+        body_format: json
+        body:
+          email: "{{ immich_admin_email }}"
+          password: "{{ immich_admin_password }}"
+        status_code: 201
+        return_content: true
+      register: login_result
+      no_log: true
+
+    - name: Buscar ID do usuário admin
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/users/me"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ login_result.json.accessToken }}"
+        status_code: 200
+        return_content: true
+      register: user_info
+      no_log: true
+
+    - name: Verificar se external library já existe
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/libraries"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ login_result.json.accessToken }}"
+        status_code: 200
+        return_content: true
+      register: libraries_result
+
+    - name: Criar external library de fotos (idempotente)
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/libraries"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ login_result.json.accessToken }}"
+        body_format: json
+        body:
+          ownerId: "{{ user_info.json.id }}"
+          name: "Fotos Iure"
+          importPaths:
+            - "{{ photos_container_path }}"
+          exclusionPatterns:
+            - "**/.dtrash/**"
+            - "**/upload/**"
+            - "**/*.db"
+            - "**/*.txt"
+        status_code: [200, 201]
+        return_content: true
+      register: library_result
+      when: >
+        libraries_result.json | selectattr('name', 'equalto', 'Fotos Iure') | list | length == 0
+
+    - name: Library já existia
+      ansible.builtin.debug:
+        msg: "External library 'Fotos Iure' já existe — pulando criação"
+      when: >
+        libraries_result.json | selectattr('name', 'equalto', 'Fotos Iure') | list | length > 0
+
+    - name: Obter ID da library (criada ou existente)
+      ansible.builtin.set_fact:
+        library_id: >-
+          {{
+            library_result.json.id
+            if library_result is not skipped
+            else (libraries_result.json | selectattr('name', 'equalto', 'Fotos Iure') | list | first).id
+          }}
+
+    - name: Disparar scan da external library
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/libraries/{{ library_id }}/scan"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ login_result.json.accessToken }}"
+        status_code: [200, 201, 204]
+      register: scan_result
+
     - name: Deploy concluído
       ansible.builtin.debug:
         msg: |
