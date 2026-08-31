@@ -204,17 +204,19 @@ jobs:
         run: |
           PROXMOX_IP="10.0.0.70"
           IMMICH_IP="${{ vars.IMMICH_HOST }}"
+          RUNNER_KEY_SRC="/home/runner/.ssh/id_ed25519.pub"
+          PROXMOX_KEY_DST="/tmp/runner_immich_ct.pub"
 
-          # Atualiza known_hosts do runner para o CT (necessário após recreate)
+          # Atualiza known_hosts do runner para o CT
           mkdir -p /home/runner/.ssh
           ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "${IMMICH_IP}" 2>/dev/null || true
           ssh-keyscan -H "${IMMICH_IP}" >> /home/runner/.ssh/known_hosts 2>/dev/null
 
-          RUNNER_PUBKEY=$(cat /home/runner/.ssh/id_ed25519.pub 2>/dev/null || \
-                          cat /home/runner/.ssh/id_rsa.pub 2>/dev/null || echo "")
+          # Copia a chave pública para o Proxmox host (evita problemas de escape)
+          scp -o StrictHostKeyChecking=no "${RUNNER_KEY_SRC}" "root@${PROXMOX_IP}:${PROXMOX_KEY_DST}"
 
-          # Gera inventory dinâmico com IPs corretos
-          cat > /tmp/inventory-immich.yml << EOF
+          # Gera inventory dinâmico
+          cat > /tmp/inventory-immich.yml << INVENTORY
           proxmox:
             hosts:
               naruto:
@@ -226,10 +228,10 @@ jobs:
                 ansible_host: ${IMMICH_IP}
                 ansible_user: root
                 ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
-          EOF
+          INVENTORY
 
           ansible-playbook \
             -i /tmp/inventory-immich.yml \
             ansible/playbooks/immich-provision.yml \
             -e immich_db_password="${{ secrets.IMMICH_DB_PASSWORD }}" \
-            -e "runner_ssh_pubkey=${RUNNER_PUBKEY}"
+            -e runner_key_file="${PROXMOX_KEY_DST}"
