@@ -176,7 +176,7 @@ jobs:
           TF_VAR_proxmox_api_token: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
 
-  # --- Post-provision: Fix config + Setup Docker + Immich
+  # --- Post-provision: Configura LXC + Docker + Immich via Ansible
   provision:
     name: Provision Immich
     needs: apply
@@ -188,91 +188,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fix LXC config (bind mount + keyctl dedup)
+      - name: Install Ansible
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ vars.PROXMOX_HOST }} bash <<'SCRIPT'
-          set -euo pipefail
-          CT_ID=110
-
-          # Para o container para modificar config
-          pct stop ${CT_ID} 2>/dev/null || true
-          sleep 5
-
-          # Corrige keyctl duplicado (bug do Terraform provider)
-          sed -i 's/keyctl=1,keyctl=1/keyctl=1/g' /etc/pve/lxc/${CT_ID}.conf
-
-          # Garante keyctl habilitado (necessário para Docker em LXC unprivileged)
-          if ! grep -q "keyctl=1" /etc/pve/lxc/${CT_ID}.conf; then
-            sed -i 's/features: nesting=1/features: nesting=1,keyctl=1/' /etc/pve/lxc/${CT_ID}.conf
+          if ! command -v ansible-playbook &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ansible
           fi
+          ansible --version
 
-          # Garante gateway configurado (o módulo Terraform não passa gw)
-          if ! grep -q "gw=" /etc/pve/lxc/${CT_ID}.conf; then
-            sed -i 's/ip=10.0.0.76\/8/ip=10.0.0.76\/8,gw=10.0.0.1/' /etc/pve/lxc/${CT_ID}.conf
-          fi
-
-          # Garante nameserver configurado (Terraform pode deixar vazio)
-          pct set ${CT_ID} --nameserver 10.0.0.1
-
-          # Adiciona bind mount das fotos (se não existir)
-          if ! grep -q "^mp0:" /etc/pve/lxc/${CT_ID}.conf; then
-            echo "mp0: /mnt/hd1tb/iure/fotos,mp=/mnt/fotos,ro=1" >> /etc/pve/lxc/${CT_ID}.conf
-          fi
-
-          # Inicia o container
-          pct start ${CT_ID}
-          sleep 10
-          echo "CT ${CT_ID} iniciado"
-
-          # Injeta chave SSH do runner no CT (necessário após recreate)
-          RUNNER_PUBKEY=$(cat /home/runner/.ssh/id_ed25519.pub 2>/dev/null || cat /home/runner/.ssh/id_rsa.pub 2>/dev/null)
-          pct exec ${CT_ID} -- bash -c "
-            mkdir -p /root/.ssh
-            chmod 700 /root/.ssh
-            grep -qF '${RUNNER_PUBKEY}' /root/.ssh/authorized_keys 2>/dev/null || echo '${RUNNER_PUBKEY}' >> /root/.ssh/authorized_keys
-            chmod 600 /root/.ssh/authorized_keys
-          "
-          echo "Chave SSH do runner injetada no CT ${CT_ID}"
-          SCRIPT
-
-      - name: Update runner known_hosts for CT 110
+      - name: Run immich-provision playbook
+        env:
+          IMMICH_DB_PASSWORD: ${{ secrets.IMMICH_DB_PASSWORD }}
+          IMMICH_VERSION: "v3"
+          ANSIBLE_HOST_KEY_CHECKING: "false"
         run: |
-          ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "10.0.0.76" 2>/dev/null || true
-          ssh-keyscan -H 10.0.0.76 >> /home/runner/.ssh/known_hosts 2>/dev/null
-          echo "known_hosts atualizado"
-
-      - name: Wait for container network
-        run: |
-          echo "Aguardando container responder na rede..."
-          for i in $(seq 1 30); do
-            if ping -c1 -W1 ${{ vars.IMMICH_HOST }} &>/dev/null; then
-              echo "Container acessível em ${{ vars.IMMICH_HOST }}"
-              break
-            fi
-            echo "Tentativa ${i}/30..."
-            sleep 3
-          done
-
-      - name: Setup Docker on LXC
-        run: |
-          ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} 'bash -s' < scripts/setup-docker.sh
-
-      - name: Deploy Immich
-        run: |
-          ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} \
-            "DB_PASSWORD='${{ secrets.IMMICH_DB_PASSWORD }}' \
-             IMMICH_VERSION='v3' \
-             bash -s" < scripts/setup-immich.sh
-
-      - name: Validate deployment
-        run: |
-          echo "Validando deploy..."
-          sleep 15
-          if curl -sf http://${{ vars.IMMICH_HOST }}:2283/api/server/ping; then
-            echo "✓ Immich respondendo com sucesso"
-          else
-            echo "✗ Immich não responde — verifique os logs"
-            ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} \
-              "cd /opt/immich && docker compose logs --tail 30"
-            exit 1
-          fi
+          ansible-playbook \
+            -i ansible/inventory/prod.yml \
+            ansible/playbooks/immich-provision.yml \
+            -e proxmox_host=${{ vars.PROXMOX_HOST }} \
+            -e immich_host=${{ vars.IMMICH_HOST }} \
+            -e immich_db_password="${{ secrets.IMMICH_DB_PASSWORD }}"

@@ -1,0 +1,17 @@
+---
+# Inventory de produção — RadinLab
+# ATENÇÃO: Este inventory é usado pela pipeline do Immich.
+# Cada playbook deve especificar explicitamente o grupo alvo (hosts: proxmox ou hosts: immich).
+
+proxmox:
+  hosts:
+    naruto:
+      ansible_host: "{{ proxmox_host | default('10.0.0.70') }}"
+      ansible_user: root
+
+immich:
+  hosts:
+    immich_ct:
+      ansible_host: "{{ immich_host | default('10.0.0.76') }}"
+      ansible_user: root
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no"

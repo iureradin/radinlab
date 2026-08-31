@@ -1,0 +1,314 @@
+---
+# immich-provision.yml
+# Provisiona o CT 110 (Immich) no Proxmox:
+#   Play 1: Corrige config do LXC             → roda SOMENTE em proxmox (naruto)
+#   Play 2: Instala Docker CE                  → roda SOMENTE em immich (CT 110)
+#   Play 3: Deploy Immich via docker compose   → roda SOMENTE em immich (CT 110)
+#
+# Uso na pipeline:
+#   ansible-playbook -i inventory/prod.yml playbooks/immich-provision.yml \
+#     -e proxmox_host=10.0.0.70 \
+#     -e immich_host=10.0.0.76 \
+#     -e immich_db_password=<secret>
+
+# ===========================================================================
+# Play 1 — Corrige configuração do LXC no host Proxmox (naruto)
+# ===========================================================================
+- name: Fix LXC config no Proxmox host
+  hosts: proxmox       # SOMENTE naruto (10.0.0.70)
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    ct_id: 110
+    immich_ip: "10.0.0.76"
+    immich_gateway: "10.0.0.1"
+    immich_nameserver: "10.0.0.1"
+    photos_host_path: "/mnt/hd1tb/iure/fotos"
+    photos_ct_path: "/mnt/fotos"
+
+  tasks:
+    - name: Verificar status do CT
+      ansible.builtin.command: pct status {{ ct_id }}
+      register: ct_status
+      changed_when: false
+      failed_when: ct_status.rc != 0
+
+    - name: Parar CT para modificar config
+      ansible.builtin.command: pct stop {{ ct_id }}
+      when: "'running' in ct_status.stdout"
+
+    - name: Aguardar CT parar
+      ansible.builtin.pause:
+        seconds: 5
+      when: "'running' in ct_status.stdout"
+
+    - name: Corrigir keyctl duplicado (bug do Terraform provider)
+      ansible.builtin.replace:
+        path: "/etc/pve/lxc/{{ ct_id }}.conf"
+        regexp: 'keyctl=1,keyctl=1'
+        replace: 'keyctl=1'
+
+    - name: Garantir keyctl=1 (necessário para Docker em LXC unprivileged)
+      ansible.builtin.replace:
+        path: "/etc/pve/lxc/{{ ct_id }}.conf"
+        regexp: '^(features: nesting=1)$'
+        replace: '\1,keyctl=1'
+
+    - name: Garantir gateway na interface de rede
+      ansible.builtin.replace:
+        path: "/etc/pve/lxc/{{ ct_id }}.conf"
+        regexp: "(ip={{ immich_ip }}/8)(?!,gw=)"
+        replace: '\1,gw={{ immich_gateway }}'
+
+    - name: Garantir nameserver configurado
+      ansible.builtin.command: pct set {{ ct_id }} --nameserver {{ immich_nameserver }}
+      changed_when: true
+
+    - name: Garantir bind mount das fotos
+      ansible.builtin.lineinfile:
+        path: "/etc/pve/lxc/{{ ct_id }}.conf"
+        line: "mp0: {{ photos_host_path }},mp={{ photos_ct_path }},ro=1"
+        regexp: "^mp0:"
+        state: present
+
+    - name: Iniciar CT
+      ansible.builtin.command: pct start {{ ct_id }}
+
+    - name: Aguardar CT inicializar
+      ansible.builtin.pause:
+        seconds: 12
+
+    - name: Injetar chave SSH do runner no CT via pct exec
+      ansible.builtin.shell: |
+        set -euo pipefail
+        RUNNER_KEY=$(cat /home/runner/.ssh/id_ed25519.pub 2>/dev/null || \
+                     cat /home/runner/.ssh/id_rsa.pub 2>/dev/null || echo "")
+        [ -z "$RUNNER_KEY" ] && { echo "Nenhuma chave encontrada"; exit 1; }
+        pct exec {{ ct_id }} -- bash -c "
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          touch /root/.ssh/authorized_keys
+          grep -qF '$RUNNER_KEY' /root/.ssh/authorized_keys || \
+            echo '$RUNNER_KEY' >> /root/.ssh/authorized_keys
+          chmod 600 /root/.ssh/authorized_keys
+        "
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Atualizar known_hosts do runner para o CT
+      ansible.builtin.shell: |
+        ssh-keygen -f "/home/runner/.ssh/known_hosts" -R "{{ immich_ip }}" 2>/dev/null || true
+        ssh-keyscan -H "{{ immich_ip }}" >> /home/runner/.ssh/known_hosts 2>/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Exibir config final do CT
+      ansible.builtin.command: pct config {{ ct_id }}
+      register: ct_config
+      changed_when: false
+
+    - name: Mostrar config
+      ansible.builtin.debug:
+        msg: "{{ ct_config.stdout_lines }}"
+
+
+# ===========================================================================
+# Play 2 — Instalar Docker CE no CT Immich
+# ===========================================================================
+- name: Instalar Docker CE no CT Immich
+  hosts: immich         # SOMENTE CT 110 (10.0.0.76)
+  gather_facts: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Verificar se Docker já está instalado e funcional
+      ansible.builtin.command: docker compose version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Docker já instalado — pular instalação
+      ansible.builtin.debug:
+        msg: "Docker já instalado: {{ docker_check.stdout }}"
+      when: docker_check.rc == 0
+
+    - name: Instalar dependências do Docker
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - apt-transport-https
+          - software-properties-common
+        state: present
+        update_cache: true
+      when: docker_check.rc != 0
+
+    - name: Criar diretório de keyrings
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+      when: docker_check.rc != 0
+
+    - name: Baixar e importar GPG key do Docker
+      ansible.builtin.shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+          gpg --batch --no-tty --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        executable: /bin/bash
+        creates: /etc/apt/keyrings/docker.gpg
+      when: docker_check.rc != 0
+
+    - name: Adicionar repositório Docker
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        state: present
+        filename: docker
+      when: docker_check.rc != 0
+
+    - name: Instalar Docker CE
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+      when: docker_check.rc != 0
+
+    - name: Habilitar e iniciar serviço Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+      when: docker_check.rc != 0
+
+    - name: Validar Docker após instalação
+      ansible.builtin.command: docker compose version
+      changed_when: false
+
+
+# ===========================================================================
+# Play 3 — Deploy do Immich via Docker Compose
+# ===========================================================================
+- name: Deploy Immich via Docker Compose
+  hosts: immich         # SOMENTE CT 110 (10.0.0.76)
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    immich_dir: "/opt/immich"
+    upload_location: "/var/lib/immich/upload"
+    db_data_location: "/var/lib/immich/pgdata"
+    immich_version: "{{ lookup('env', 'IMMICH_VERSION') | default('v3', true) }}"
+    immich_db_password: "{{ lookup('env', 'IMMICH_DB_PASSWORD') | default(omit) }}"
+    db_username: "immich"
+    db_database_name: "immich"
+    photos_ct_mount: "/mnt/fotos"
+    photos_container_path: "/mnt/hd1tb/iure/fotos"
+
+  tasks:
+    - name: Validar variáveis obrigatórias
+      ansible.builtin.assert:
+        that:
+          - immich_db_password is defined
+          - immich_db_password | length > 0
+        fail_msg: "IMMICH_DB_PASSWORD não definido. Passe via -e ou variável de ambiente."
+
+    - name: Criar diretórios do Immich
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ immich_dir }}"
+        - "{{ upload_location }}"
+        - "{{ db_data_location }}"
+
+    - name: Obter tag do último release do Immich via GitHub API
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/immich-app/immich/releases/latest
+        return_content: true
+        headers:
+          Accept: "application/vnd.github.v3+json"
+      register: immich_release_api
+      when: immich_version in ['latest', 'release']
+
+    - name: Definir release tag efetiva
+      ansible.builtin.set_fact:
+        effective_release_tag: >-
+          {{ (immich_version in ['latest', 'release'])
+             | ternary(immich_release_api.json.tag_name, immich_version) }}
+
+    - name: Baixar docker-compose.yml oficial do release
+      ansible.builtin.get_url:
+        url: "https://github.com/immich-app/immich/releases/download/{{ effective_release_tag }}/docker-compose.yml"
+        dest: "{{ immich_dir }}/docker-compose.yml"
+        mode: "0644"
+        force: true       # sempre garante compose atualizado
+
+    - name: Adicionar bind mount das fotos no compose
+      ansible.builtin.lineinfile:
+        path: "{{ immich_dir }}/docker-compose.yml"
+        insertafter: '- /etc/localtime:/etc/localtime:ro'
+        line: "      - {{ photos_ct_mount }}:{{ photos_container_path }}:ro"
+        regexp: "{{ photos_ct_mount }}:"
+        state: present
+
+    - name: Criar arquivo .env do Immich
+      ansible.builtin.copy:
+        dest: "{{ immich_dir }}/.env"
+        mode: "0600"
+        content: |
+          # Gerado por ansible/playbooks/immich-provision.yml
+          UPLOAD_LOCATION={{ upload_location }}
+          DB_DATA_LOCATION={{ db_data_location }}
+          IMMICH_VERSION={{ effective_release_tag }}
+          DB_PASSWORD={{ immich_db_password }}
+          DB_USERNAME={{ db_username }}
+          DB_DATABASE_NAME={{ db_database_name }}
+
+    - name: Pull das imagens Docker do Immich
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ immich_dir }}"
+      changed_when: true
+
+    - name: Subir stack do Immich
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: "{{ immich_dir }}"
+      changed_when: true
+
+    - name: Aguardar Immich responder (até 5 min)
+      ansible.builtin.uri:
+        url: "http://localhost:2283/api/server/ping"
+        method: GET
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 30
+      delay: 10
+
+    - name: Status dos containers
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ immich_dir }}"
+      register: compose_ps
+      changed_when: false
+
+    - name: Deploy concluído
+      ansible.builtin.debug:
+        msg: |
+          ✓ Immich {{ effective_release_tag }} implantado com sucesso!
+          URL interna: http://{{ ansible_host }}:2283
+          {{ compose_ps.stdout }}
