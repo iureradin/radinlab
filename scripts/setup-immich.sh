@@ -2,139 +2,78 @@
 # ---
 # setup-immich.sh
 # Deploy Immich Photo Management via Docker Compose
+# Usa o docker-compose.yml oficial do release do Immich
 # ---
 set -euo pipefail
 
-# --- Configuration
-IMMICH_VERSION="${IMMICH_VERSION:-release}"
-DB_PASSWORD="${DB_PASSWORD:-immich_db_password_change_me}"
-UPLOAD_LOCATION="${UPLOAD_LOCATION:-/mnt/photos}"
+# --- Configuração
+IMMICH_VERSION="${IMMICH_VERSION:-v3}"
+DB_PASSWORD="${DB_PASSWORD:-immich_db_pass}"
+DB_USERNAME="${DB_USERNAME:-immich}"
+DB_DATABASE_NAME="${DB_DATABASE_NAME:-immich}"
+UPLOAD_LOCATION="${UPLOAD_LOCATION:-/var/lib/immich/upload}"
+DB_DATA_LOCATION="${DB_DATA_LOCATION:-/var/lib/immich/pgdata}"
 IMMICH_DIR="/opt/immich"
+PHOTOS_PATH="${PHOTOS_PATH:-/mnt/hd1tb/iure/fotos}"
 
 echo "=== Deploying Immich ${IMMICH_VERSION} ==="
 
-# --- Create directories
+# --- Diretórios
 mkdir -p "${IMMICH_DIR}"
 mkdir -p "${UPLOAD_LOCATION}"
-mkdir -p "${IMMICH_DIR}/db"
+mkdir -p "${DB_DATA_LOCATION}"
 
-# --- Create .env file
+# --- Baixa o docker-compose.yml oficial do release
+echo "Baixando docker-compose.yml oficial do Immich ${IMMICH_VERSION}..."
+
+# Resolve a tag de release para buscar o compose correto
+RELEASE_TAG=$(curl -s https://api.github.com/repos/immich-app/immich/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+echo "Release encontrado: ${RELEASE_TAG}"
+
+curl -fsSL "https://github.com/immich-app/immich/releases/download/${RELEASE_TAG}/docker-compose.yml" \
+  -o "${IMMICH_DIR}/docker-compose.yml"
+
+# --- Cria .env
 cat > "${IMMICH_DIR}/.env" <<EOF
-# ---
-# Immich Environment Configuration
-# ---
-
-# Version
-IMMICH_VERSION=${IMMICH_VERSION}
-
-# Database
-DB_PASSWORD=${DB_PASSWORD}
-DB_USERNAME=postgres
-DB_DATABASE_NAME=immich
-
-# Upload location
+# Gerado por setup-immich.sh em $(date '+%d/%m/%Y %H:%M')
 UPLOAD_LOCATION=${UPLOAD_LOCATION}
-
-# Machine Learning
-IMMICH_MACHINE_LEARNING_URL=http://immich-machine-learning:3003
+DB_DATA_LOCATION=${DB_DATA_LOCATION}
+IMMICH_VERSION=${IMMICH_VERSION}
+DB_PASSWORD=${DB_PASSWORD}
+DB_USERNAME=${DB_USERNAME}
+DB_DATABASE_NAME=${DB_DATABASE_NAME}
 EOF
 
-# --- Create Docker Compose file
-cat > "${IMMICH_DIR}/docker-compose.yml" <<'COMPOSE'
-# ---
-# Immich Docker Compose
-# https://immich.app
-# ---
+# --- Adiciona mount das fotos existentes no compose
+# Monta /mnt/fotos (bind mount do CT) como /mnt/hd1tb/iure/fotos dentro do container
+if ! grep -q "hd1tb" "${IMMICH_DIR}/docker-compose.yml"; then
+  sed -i "s|- /etc/localtime:/etc/localtime:ro|- /etc/localtime:/etc/localtime:ro\n      - /mnt/fotos:${PHOTOS_PATH}:ro|" \
+    "${IMMICH_DIR}/docker-compose.yml"
+fi
 
-name: immich
-
-services:
-  # --- Immich Server
-  immich-server:
-    container_name: immich_server
-    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
-    volumes:
-      - ${UPLOAD_LOCATION:-/mnt/photos}:/usr/src/app/upload
-      - /etc/localtime:/etc/localtime:ro
-    env_file:
-      - .env
-    ports:
-      - "2283:2283"
-    depends_on:
-      - redis
-      - database
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:2283/api/server/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  # --- Machine Learning
-  immich-machine-learning:
-    container_name: immich_machine_learning
-    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
-    volumes:
-      - model-cache:/cache
-    env_file:
-      - .env
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:3003/ping')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
-
-  # --- Redis
-  redis:
-    container_name: immich_redis
-    image: docker.io/redis:6.2-alpine
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # --- PostgreSQL with pgvecto.rs
-  database:
-    container_name: immich_postgres
-    image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_USER: ${DB_USERNAME:-postgres}
-      POSTGRES_DB: ${DB_DATABASE_NAME:-immich}
-      POSTGRES_INITDB_ARGS: '--data-checksums'
-    volumes:
-      - ${IMMICH_DIR:-/opt/immich}/db:/var/lib/postgresql/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready --dbname='${DB_DATABASE_NAME}' --username='${DB_USERNAME}'"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-volumes:
-  model-cache:
-COMPOSE
-
-# --- Pull and start containers
+# --- Pull e sobe a stack
 cd "${IMMICH_DIR}"
+echo "Baixando imagens..."
 docker compose pull
+
+echo "Subindo containers..."
 docker compose up -d
 
-# --- Wait for startup
-echo "Waiting for Immich to start..."
-sleep 15
+# --- Aguarda o servidor responder
+echo "Aguardando Immich inicializar..."
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:2283/api/server/ping &>/dev/null; then
+    echo "✓ Immich respondendo após $((i * 5))s"
+    break
+  fi
+  sleep 5
+done
 
-# --- Check status
+# --- Status final
+echo ""
 docker compose ps
-
 echo ""
-echo "=== Immich deployment complete ==="
-echo "Access Immich at: http://<container-ip>:2283"
-echo "Upload location: ${UPLOAD_LOCATION}"
-echo ""
+echo "=== Deploy concluído ==="
+echo "Acesse: http://$(hostname -I | awk '{print $1}'):2283"
+echo "Upload: ${UPLOAD_LOCATION}"
+echo "Fotos existentes: ${PHOTOS_PATH} (read-only)"

@@ -125,50 +125,57 @@ jobs:
           TF_VAR_proxmox_api_token: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
           TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
 
-  # --- Post-provision: Setup Docker + Immich
+  # --- Post-provision: Fix config + Setup Docker + Immich
   provision:
     name: Provision Immich
     needs: apply
     runs-on: [self-hosted, prod]
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: ${{ github.ref_name }}
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Add bind mount and keyctl (requires root on host)
+      - name: Fix LXC config (bind mount + keyctl dedup)
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ vars.PROXMOX_HOST }} bash <<'SCRIPT'
-          # Stop container to modify config
-          pct stop 110 2>/dev/null || true
-          sleep 3
+          set -euo pipefail
+          CT_ID=110
 
-          # Add bind mount for photos (same pattern as Jellyfin)
-          if ! grep -q "mp0:" /etc/pve/lxc/110.conf; then
-            echo "mp0: /mnt/hd4tb/immich,mp=/mnt/photos" >> /etc/pve/lxc/110.conf
+          # Para o container para modificar config
+          pct stop ${CT_ID} 2>/dev/null || true
+          sleep 5
+
+          # Corrige keyctl duplicado (bug do Terraform provider)
+          sed -i 's/keyctl=1,keyctl=1/keyctl=1/g' /etc/pve/lxc/${CT_ID}.conf
+
+          # Garante keyctl habilitado (necessário para Docker em LXC unprivileged)
+          if ! grep -q "keyctl=1" /etc/pve/lxc/${CT_ID}.conf; then
+            sed -i 's/features: nesting=1/features: nesting=1,keyctl=1/' /etc/pve/lxc/${CT_ID}.conf
           fi
 
-          # Add keyctl feature (needed for Docker)
-          sed -i 's/features: nesting=1/features: nesting=1,keyctl=1/' /etc/pve/lxc/110.conf
+          # Adiciona bind mount das fotos (se não existir)
+          if ! grep -q "^mp0:" /etc/pve/lxc/${CT_ID}.conf; then
+            echo "mp0: /mnt/hd1tb/iure/fotos,mp=/mnt/fotos,ro=1" >> /etc/pve/lxc/${CT_ID}.conf
+          fi
 
-          # Create host directory for photos
-          mkdir -p /mnt/hd4tb/immich
-
-          # Start container
-          pct start 110
+          # Inicia o container
+          pct start ${CT_ID}
           sleep 10
+          echo "CT ${CT_ID} iniciado"
           SCRIPT
 
       - name: Wait for container network
         run: |
-          echo "Waiting for container to get network..."
+          echo "Aguardando container responder na rede..."
           for i in $(seq 1 30); do
             if ping -c1 -W1 ${{ vars.IMMICH_HOST }} &>/dev/null; then
-              echo "Container reachable at ${{ vars.IMMICH_HOST }}"
+              echo "Container acessível em ${{ vars.IMMICH_HOST }}"
               break
             fi
-            sleep 2
+            echo "Tentativa ${i}/30..."
+            sleep 3
           done
 
       - name: Setup Docker on LXC
@@ -176,9 +183,21 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} 'bash -s' < scripts/setup-docker.sh
 
       - name: Deploy Immich
-        env:
-          DB_PASSWORD: ${{ secrets.IMMICH_DB_PASSWORD }}
-          IMMICH_VERSION: "release"
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} \
-            "DB_PASSWORD='${DB_PASSWORD}' IMMICH_VERSION='${IMMICH_VERSION}' bash -s" < scripts/setup-immich.sh
+            "DB_PASSWORD='${{ secrets.IMMICH_DB_PASSWORD }}' \
+             IMMICH_VERSION='v3' \
+             bash -s" < scripts/setup-immich.sh
+
+      - name: Validate deployment
+        run: |
+          echo "Validando deploy..."
+          sleep 15
+          if curl -sf http://${{ vars.IMMICH_HOST }}:2283/api/server/ping; then
+            echo "✓ Immich respondendo com sucesso"
+          else
+            echo "✗ Immich não responde — verifique os logs"
+            ssh -o StrictHostKeyChecking=no root@${{ vars.IMMICH_HOST }} \
+              "cd /opt/immich && docker compose logs --tail 30"
+            exit 1
+          fi

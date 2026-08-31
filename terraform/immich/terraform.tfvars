@@ -27,7 +27,10 @@ root_datastore    = "ssd-vms"
 
 # --- Network
 network_bridge = "vmbr0"
-ipv4_address   = "dhcp"
+ipv4_address   = "10.0.0.76/8"
+
+# --- Photo Storage (bind mount adicionado pós-provision via pct config)
+# Host: /mnt/hd1tb/iure/fotos -> CT: /mnt/fotos (ro) -> Docker: /mnt/hd1tb/iure/fotos (ro)
 
 # --- Immich
-immich_version = "release"
+immich_version = "v3"
