@@ -155,6 +155,11 @@ jobs:
             sed -i 's/features: nesting=1/features: nesting=1,keyctl=1/' /etc/pve/lxc/${CT_ID}.conf
           fi
 
+          # Garante gateway configurado (o módulo Terraform não passa gw)
+          if ! grep -q "gw=" /etc/pve/lxc/${CT_ID}.conf; then
+            sed -i 's/ip=10.0.0.76\/8/ip=10.0.0.76\/8,gw=10.0.0.1/' /etc/pve/lxc/${CT_ID}.conf
+          fi
+
           # Adiciona bind mount das fotos (se não existir)
           if ! grep -q "^mp0:" /etc/pve/lxc/${CT_ID}.conf; then
             echo "mp0: /mnt/hd1tb/iure/fotos,mp=/mnt/fotos,ro=1" >> /etc/pve/lxc/${CT_ID}.conf
@@ -164,6 +169,7 @@ jobs:
           pct start ${CT_ID}
           sleep 10
           echo "CT ${CT_ID} iniciado"
+          pct config ${CT_ID}
           SCRIPT
 
       - name: Wait for container network
