@@ -7,6 +7,11 @@ name: Terraform Immich
 
 on:
   workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Destruir o CT 110? (digite "yes" para confirmar)'
+        required: false
+        default: 'no'
   push:
     branches:
       - prod
@@ -29,12 +34,58 @@ env:
   WORKING_DIR: "terraform/immich"
 
 jobs:
+  # --- Destroy (somente quando inputs.destroy == 'yes')
+  destroy:
+    name: Terraform Destroy
+    runs-on: [self-hosted, prod]
+    timeout-minutes: 15
+    environment: ${{ github.ref_name }}
+    if: github.event.inputs.destroy == 'yes'
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          if ! command -v unzip &>/dev/null || ! command -v node &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq unzip nodejs
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -input=false
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          PROXMOX_VE_ENDPOINT: ${{ vars.PROXMOX_ENDPOINT }}
+          PROXMOX_VE_API_TOKEN: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
+          TF_VAR_proxmox_api_url: ${{ vars.PROXMOX_ENDPOINT }}
+          TF_VAR_proxmox_api_token: "root@pam!terraform-token=${{ secrets.PROXMOX_API_TOKEN }}"
+          TF_VAR_root_password: ${{ secrets.LXC_ROOT_PASSWORD }}
+
   # --- Validate and Plan
   plan:
     name: Terraform Plan
     runs-on: [self-hosted, prod]
     timeout-minutes: 10
     environment: ${{ github.ref_name }}
+    if: github.event.inputs.destroy != 'yes'
     defaults:
       run:
         working-directory: ${{ env.WORKING_DIR }}
