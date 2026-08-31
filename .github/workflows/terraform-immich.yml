@@ -160,6 +160,9 @@ jobs:
             sed -i 's/ip=10.0.0.76\/8/ip=10.0.0.76\/8,gw=10.0.0.1/' /etc/pve/lxc/${CT_ID}.conf
           fi
 
+          # Garante nameserver configurado (Terraform pode deixar vazio)
+          pct set ${CT_ID} --nameserver 10.0.0.1
+
           # Adiciona bind mount das fotos (se não existir)
           if ! grep -q "^mp0:" /etc/pve/lxc/${CT_ID}.conf; then
             echo "mp0: /mnt/hd1tb/iure/fotos,mp=/mnt/fotos,ro=1" >> /etc/pve/lxc/${CT_ID}.conf
