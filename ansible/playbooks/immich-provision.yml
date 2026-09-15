@@ -213,15 +213,12 @@
   any_errors_fatal: true
   vars:
     immich_dir: "/opt/immich"
-    upload_location: "/var/lib/immich/upload"
+    upload_location: "/mnt/hd1tb/iure/fotos"
     db_data_location: "/var/lib/immich/pgdata"
     immich_version: "{{ lookup('env', 'IMMICH_VERSION') | default('v3', true) }}"
     immich_db_password: "{{ lookup('env', 'IMMICH_DB_PASSWORD') | default(omit) }}"
     db_username: "immich"
     db_database_name: "immich"
-    photos_ct_mount: "/mnt/hd1tb/iure/fotos"
-    # Symlink: /var/lib/immich/library/admin → /mnt/hd1tb/iure/fotos
-    # Fotos físicas ficam no HDD, acessíveis via SMB e pelo Immich
 
   tasks:
     - name: Validar variáveis obrigatórias
@@ -284,23 +281,6 @@
         cmd: docker compose up -d
         chdir: "{{ immich_dir }}"
       changed_when: true
-
-    - name: Garantir que /var/lib/immich/library existe
-      ansible.builtin.file:
-        path: /var/lib/immich/library
-        state: directory
-        mode: "0755"
-
-    - name: Remover diretório admin se existir (para poder criar symlink)
-      ansible.builtin.file:
-        path: /var/lib/immich/library/admin
-        state: absent
-
-    - name: Criar symlink library/admin → /mnt/hd1tb/iure/fotos
-      ansible.builtin.file:
-        src: "{{ photos_ct_mount }}"
-        dest: /var/lib/immich/library/admin
-        state: link
 
     - name: Aguardar Immich responder (até 5 min)
       ansible.builtin.uri:
@@ -386,7 +366,7 @@
           ownerId: "{{ user_info.json.id }}"
           name: "Fotos Iure"
           importPaths:
-            - "{{ photos_ct_mount }}"
+            - "{{ upload_location }}"
           exclusionPatterns:
             - "**/.dtrash/**"
             - "**/upload/**"
