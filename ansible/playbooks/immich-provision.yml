@@ -24,7 +24,8 @@
     immich_gateway: "10.0.0.1"
     immich_nameserver: "10.0.0.1"
     photos_host_path: "/mnt/hd1tb/iure/fotos"
-    photos_ct_path: "/mnt/fotos"
+    photos_ct_path: "/mnt/hd1tb/iure/fotos"
+    # Bind mount sem ro=1 — Immich precisa de escrita para gerenciar arquivos
 
   tasks:
     - name: Verificar status do CT
@@ -64,10 +65,10 @@
       ansible.builtin.command: pct set {{ ct_id }} --nameserver {{ immich_nameserver }}
       changed_when: true
 
-    - name: Garantir bind mount das fotos
+    - name: Garantir bind mount das fotos (escrita — necessário para symlink de library)
       ansible.builtin.lineinfile:
         path: "/etc/pve/lxc/{{ ct_id }}.conf"
-        line: "mp0: {{ photos_host_path }},mp={{ photos_ct_path }},ro=1"
+        line: "mp0: {{ photos_host_path }},mp={{ photos_ct_path }}"
         regexp: "^mp0:"
         state: present
 
@@ -218,8 +219,9 @@
     immich_db_password: "{{ lookup('env', 'IMMICH_DB_PASSWORD') | default(omit) }}"
     db_username: "immich"
     db_database_name: "immich"
-    photos_ct_mount: "/mnt/fotos"
-    photos_container_path: "/mnt/hd1tb/iure/fotos"
+    photos_ct_mount: "/mnt/hd1tb/iure/fotos"
+    # Symlink: /var/lib/immich/library/admin → /mnt/hd1tb/iure/fotos
+    # Fotos físicas ficam no HDD, acessíveis via SMB e pelo Immich
 
   tasks:
     - name: Validar variáveis obrigatórias
@@ -258,14 +260,6 @@
         mode: "0644"
         force: true       # sempre garante compose atualizado
 
-    - name: Adicionar bind mount das fotos no compose
-      ansible.builtin.lineinfile:
-        path: "{{ immich_dir }}/docker-compose.yml"
-        insertafter: '- /etc/localtime:/etc/localtime:ro'
-        line: "      - {{ photos_ct_mount }}:{{ photos_container_path }}:ro"
-        regexp: "{{ photos_ct_mount }}:"
-        state: present
-
     - name: Criar arquivo .env do Immich
       ansible.builtin.copy:
         dest: "{{ immich_dir }}/.env"
@@ -290,6 +284,23 @@
         cmd: docker compose up -d
         chdir: "{{ immich_dir }}"
       changed_when: true
+
+    - name: Garantir que /var/lib/immich/library existe
+      ansible.builtin.file:
+        path: /var/lib/immich/library
+        state: directory
+        mode: "0755"
+
+    - name: Remover diretório admin se existir (para poder criar symlink)
+      ansible.builtin.file:
+        path: /var/lib/immich/library/admin
+        state: absent
+
+    - name: Criar symlink library/admin → /mnt/hd1tb/iure/fotos
+      ansible.builtin.file:
+        src: "{{ photos_ct_mount }}"
+        dest: /var/lib/immich/library/admin
+        state: link
 
     - name: Aguardar Immich responder (até 5 min)
       ansible.builtin.uri:
@@ -375,7 +386,7 @@
           ownerId: "{{ user_info.json.id }}"
           name: "Fotos Iure"
           importPaths:
-            - "{{ photos_container_path }}"
+            - "{{ photos_ct_mount }}"
           exclusionPatterns:
             - "**/.dtrash/**"
             - "**/upload/**"
