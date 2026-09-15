@@ -72,45 +72,13 @@
         regexp: "^mp0:"
         state: present
 
-    - name: Garantir estrutura de subdiretórios do Immich no bind mount
-      # Immich v3 não cria automaticamente — exige subdiretórios e sentinelas .immich
-      ansible.builtin.file:
-        path: "{{ photos_host_path }}/{{ item }}"
-        state: directory
-        mode: "0755"
-        owner: "100000"
-        group: "100000"
-      loop:
-        - thumbs
-        - upload
-        - backups
-        - library
-        - profile
-        - encoded-video
-
-    - name: Garantir arquivos sentinela .immich
-      ansible.builtin.file:
-        path: "{{ photos_host_path }}/{{ item }}/.immich"
-        state: touch
-        mode: "0644"
-        owner: "100000"
-        group: "100000"
-      loop:
-        - thumbs
-        - upload
-        - backups
-        - library
-        - profile
-        - encoded-video
-
-    - name: Garantir ownership correto na raiz do bind mount
-      # UID 100000 = root do CT unprivileged — necessário para o Immich escrever
+    - name: Garantir ownership correto no bind mount
+      # UID 100000 = root do CT unprivileged — necessário para o Immich criar a estrutura
       ansible.builtin.file:
         path: "{{ photos_host_path }}"
         state: directory
         owner: "100000"
         group: "100000"
-        recurse: true
 
     - name: Iniciar CT
       ansible.builtin.command: pct start {{ ct_id }}
