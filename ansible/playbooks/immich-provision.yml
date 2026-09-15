@@ -269,6 +269,7 @@
           DB_PASSWORD={{ immich_db_password }}
           DB_USERNAME={{ db_username }}
           DB_DATABASE_NAME={{ db_database_name }}
+          UMASK=0022
 
     - name: Pull das imagens Docker do Immich
       ansible.builtin.command:
