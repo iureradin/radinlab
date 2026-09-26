@@ -323,6 +323,17 @@ echo ""
 log "=== Resultado ==="
 log "Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]}"
 
+STATUS_FILE="/tmp/backup-status.json"
+TIMESTAMP=$(date '+%d/%m/%Y %H:%M:%S')
+
+# Preserva status do obsidian se já existir no arquivo
+OBSIDIAN_STATUS="unknown"
+OBSIDIAN_MESSAGE=""
+if [[ -f "$STATUS_FILE" ]]; then
+    OBSIDIAN_STATUS=$(python3 -c "import json; d=json.load(open('$STATUS_FILE')); print(d.get('obsidian',{}).get('status','unknown'))" 2>/dev/null || echo "unknown")
+    OBSIDIAN_MESSAGE=$(python3 -c "import json; d=json.load(open('$STATUS_FILE')); print(d.get('obsidian',{}).get('message',''))" 2>/dev/null || echo "")
+fi
+
 if [[ ${#ERRORS[@]} -gt 0 ]]; then
     log "ERROS:"
     for err in "${ERRORS[@]}"; do
@@ -331,19 +342,39 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
 
     ERROR_LIST=""
     for err in "${ERRORS[@]}"; do
-        ERROR_LIST="${ERROR_LIST}- ${err}\n"
+        ERROR_LIST="${ERROR_LIST}${err}|"
     done
 
-    telegram_alert "[RadinLab] Snapshot com erros
-
-Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]}
-Data: $(date '+%d/%m/%Y %H:%M')
-
-Erros:
-${ERROR_LIST}"
+    cat > "$STATUS_FILE" << STATUS_EOF
+{
+  "snapshot": {
+    "status": "error",
+    "message": "Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]} — ${ERROR_LIST%|}",
+    "timestamp": "$TIMESTAMP"
+  },
+  "obsidian": {
+    "status": "$OBSIDIAN_STATUS",
+    "message": "$OBSIDIAN_MESSAGE"
+  }
+}
+STATUS_EOF
 
     exit 1
 fi
+
+cat > "$STATUS_FILE" << STATUS_EOF
+{
+  "snapshot": {
+    "status": "success",
+    "message": "Sucesso: ${#SUCCESS[@]} alvos",
+    "timestamp": "$TIMESTAMP"
+  },
+  "obsidian": {
+    "status": "$OBSIDIAN_STATUS",
+    "message": "$OBSIDIAN_MESSAGE"
+  }
+}
+STATUS_EOF
 
 log "Todos os snapshots criados com sucesso!"
 exit 0
