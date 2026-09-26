@@ -13,7 +13,8 @@ SMB_PASS="Radin10@@@"
 SMB_DOMAIN="KAKASHI-PC"
 
 MOUNT_POINT="/mnt/smb-obsidian"
-BACKUP_DEST="/mnt/hd1tb/backup/obsidian"
+BACKUP_MOUNT="/mnt/smb-backup"
+BACKUP_DEST="/mnt/smb-backup/obsidian"
 STATUS_FILE="/tmp/backup-status.json"
 
 log() {
@@ -22,8 +23,12 @@ log() {
 
 cleanup() {
     if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
-        log "Desmontando share SMB..."
+        log "Desmontando share SMB obsidian..."
         umount "$MOUNT_POINT" 2>/dev/null || true
+    fi
+    if mountpoint -q "$BACKUP_MOUNT" 2>/dev/null; then
+        log "Desmontando share SMB backup..."
+        umount "$BACKUP_MOUNT" 2>/dev/null || true
     fi
 }
 trap cleanup EXIT INT TERM
@@ -61,17 +66,30 @@ EOF
 log "=== Iniciando backup do Obsidian ==="
 
 # Cria diretórios necessários
-mkdir -p "$MOUNT_POINT" "$BACKUP_DEST"
+mkdir -p "$MOUNT_POINT" "$BACKUP_MOUNT"
 
-# Monta share SMB
+# Monta share SMB origem (obsidian)
 log "Montando share //${SMB_HOST}/${SMB_SHARE}..."
 if ! mount -t cifs "//${SMB_HOST}/${SMB_SHARE}" "$MOUNT_POINT" \
     -o "username=${SMB_USER},password=${SMB_PASS},domain=${SMB_DOMAIN},uid=0,gid=0,ro" 2>&1; then
-    log "✗ ERRO: falha ao montar share SMB"
+    log "✗ ERRO: falha ao montar share SMB origem"
     update_status "error" "Falha ao montar share SMB //${SMB_HOST}/${SMB_SHARE}"
     exit 1
 fi
-log "✓ Share montado com sucesso"
+log "✓ Share origem montado com sucesso"
+
+# Monta share SMB destino (backup)
+log "Montando share //${SMB_HOST}/backup..."
+if ! mount -t cifs "//${SMB_HOST}/backup" "$BACKUP_MOUNT" \
+    -o "username=${SMB_USER},password=${SMB_PASS},domain=${SMB_DOMAIN},uid=0,gid=0" 2>&1; then
+    log "✗ ERRO: falha ao montar share SMB destino"
+    update_status "error" "Falha ao montar share SMB //${SMB_HOST}/backup"
+    exit 1
+fi
+log "✓ Share destino montado com sucesso"
+
+# Garante que a pasta obsidian existe no destino
+mkdir -p "$BACKUP_DEST"
 
 # Executa rsync incremental
 log "Iniciando rsync para ${BACKUP_DEST}..."
