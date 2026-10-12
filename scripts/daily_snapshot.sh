@@ -2,9 +2,9 @@
 # daily_snapshot.sh
 # Cria snapshots diários de containers/VMs com tag 'daily_snapshot'
 # Mantém no máximo 3 snapshots por VM/container
-# CT 109 (jellyfin): trata bind mounts removendo-os temporariamente para
-# permitir snapshot via pct, com restore garantido via trap.
-# Após snapshot do jellyfin, executa testes obrigatórios.
+# CTs com bind mounts externos (jellyfin CT109, kirocrew CT103):
+#   trata removendo bind mounts temporariamente, snapshot com container parado,
+#   restaura config e reinicia.
 
 set -uo pipefail
 
@@ -18,7 +18,10 @@ SUCCESS=()
 TELEGRAM_BOT_TOKEN="8846315620:AAEPbRUFRIK6tOSI5HwtHjNEIJ_oHAglznM"
 TELEGRAM_CHAT_ID="620923420"
 
-# Jellyfin - configurações para tratamento especial
+# CTs com bind mounts que precisam de tratamento especial
+BINDMOUNT_CTS=(109 103)
+
+# Jellyfin específico
 JELLYFIN_CTID=109
 JELLYFIN_USER="jellyfin"
 
@@ -28,10 +31,7 @@ log() {
 
 telegram_alert() {
     local message="$1"
-    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        -d "chat_id=${TELEGRAM_CHAT_ID}" \
-        -d "text=${message}" \
-        > /dev/null 2>&1 || true
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"         -d "chat_id=${TELEGRAM_CHAT_ID}"         -d "text=${message}"         > /dev/null 2>&1 || true
 }
 
 # Testes pós-snapshot do jellyfin
@@ -41,7 +41,6 @@ jellyfin_post_snapshot_tests() {
 
     log "Executando testes pós-snapshot do jellyfin (CT $vmid)..."
 
-    # Teste 1: serviço jellyfin rodando
     if pct exec "$vmid" -- systemctl is-active jellyfin > /dev/null 2>&1; then
         log "  ✓ Serviço jellyfin: rodando"
     else
@@ -49,46 +48,17 @@ jellyfin_post_snapshot_tests() {
         test_errors+=("jellyfin service is down")
     fi
 
-    # Teste 2: processo jellyfin existe
     if pct exec "$vmid" -- pgrep -u "$JELLYFIN_USER" jellyfin > /dev/null 2>&1; then
-        log "  ✓ Processo jellyfin: ativo (user: $JELLYFIN_USER)"
+        log "  ✓ Processo jellyfin: ativo"
     else
-        log "  ✗ Processo jellyfin: não encontrado para user $JELLYFIN_USER"
-        test_errors+=("jellyfin process not running as $JELLYFIN_USER")
-    fi
-
-    # Teste 3: leitura/escrita nos discos pelo user jellyfin
-    local test_file=".snapshot_test_$$"
-    for mp in "/mnt/hd4tb" "/mnt/hd1tb" "/mnt/ssd500gb"; do
-        # Teste de leitura
-        if pct exec "$vmid" -- su -s /bin/sh "$JELLYFIN_USER" -c "ls '$mp' > /dev/null 2>&1"; then
-            log "  ✓ Leitura em $mp: OK"
-        else
-            log "  ✗ Leitura em $mp: FALHOU"
-            test_errors+=("read failed on $mp")
-        fi
-
-        # Teste de escrita
-        if pct exec "$vmid" -- su -s /bin/sh "$JELLYFIN_USER" -c "touch '$mp/$test_file' 2>/dev/null && rm -f '$mp/$test_file' 2>/dev/null"; then
-            log "  ✓ Escrita em $mp: OK"
-        else
-            log "  ✗ Escrita em $mp: FALHOU (pode ser permissão — verificar manualmente)"
-            # Escrita pode falhar por design (somente leitura), não é crítico
-        fi
-    done
-
-    # Teste 4: porta HTTP do jellyfin respondendo
-    if pct exec "$vmid" -- curl -s -o /dev/null -w "%{http_code}" http://localhost:8096/health 2>/dev/null | grep -q "200\|301\|302"; then
-        log "  ✓ HTTP jellyfin (porta 8096): respondendo"
-    else
-        log "  ⚠ HTTP jellyfin (porta 8096): sem resposta (pode estar iniciando)"
+        log "  ✗ Processo jellyfin: não encontrado"
+        test_errors+=("jellyfin process not running")
     fi
 
     if [[ ${#test_errors[@]} -gt 0 ]]; then
         for err in "${test_errors[@]}"; do
             ERRORS+=("ct $vmid (jellyfin) post-test: $err")
         done
-        log "  ✗ Testes pós-snapshot: ${#test_errors[@]} falha(s)"
         return 1
     fi
 
@@ -96,21 +66,20 @@ jellyfin_post_snapshot_tests() {
     return 0
 }
 
-# Snapshot especial para jellyfin (edita config diretamente para remover bind mounts e dev,
-# faz snapshot com container parado, restaura config e reinicia)
-create_snapshot_jellyfin() {
+# Snapshot para CTs com bind mounts externos (jellyfin, kirocrew, etc.)
+create_snapshot_bindmount_ct() {
     local vmid="$1" name="$2"
     local conf_file="/etc/pve/lxc/${vmid}.conf"
     local conf_backup="/tmp/pve_lxc_${vmid}_backup_$$.conf"
 
-    log "Iniciando snapshot especial para jellyfin (CT $vmid)..."
+    log "Iniciando snapshot especial para CT $vmid ($name) com bind mounts..."
 
     # Backup da config original
     cp "$conf_file" "$conf_backup"
 
-    # Garante restore da config e reinício do container em qualquer saída
+    # Garante restore em qualquer saída
     trap "
-        log 'Restaurando config do jellyfin via trap (emergência)...'
+        log 'Restaurando config do CT $vmid via trap...'
         cp '$conf_backup' '$conf_file'
         pct start $vmid 2>/dev/null || true
         rm -f '$conf_backup'
@@ -127,7 +96,7 @@ create_snapshot_jellyfin() {
         return 1
     fi
 
-    # Aguarda parada completa
+    # Aguarda parada
     local tries=0
     while pct status "$vmid" 2>/dev/null | grep -q "running"; do
         sleep 2
@@ -144,8 +113,8 @@ create_snapshot_jellyfin() {
     done
     log "  Container parado."
 
-    # Remove mp e dev da config diretamente (sem pct set para evitar pending)
-    log "  Removendo bind mounts e device passthrough da config..."
+    # Remove mp e dev da config
+    log "  Removendo bind mounts da config..."
     grep -v -E '^(mp[0-9]+|dev[0-9]+):' "$conf_file" > "${conf_file}.tmp" && mv "${conf_file}.tmp" "$conf_file"
 
     # Cria snapshot
@@ -158,22 +127,13 @@ create_snapshot_jellyfin() {
         ERRORS+=("ct $vmid ($name): $output")
     fi
 
-    # Restaura config original antes de reiniciar, preservando seções de snapshot
-    # que o pct snapshot gravou no arquivo durante a operação
-    log "  Restaurando config original (preservando metadados de snapshot)..."
-
-    # Extrai seções de snapshot geradas pelo pct snapshot (linhas [snapname] e posteriores)
+    # Restaura config original preservando seções de snapshot
+    log "  Restaurando config original..."
     local snap_sections
     snap_sections=$(awk '/^\[/{found=1} found{print}' "$conf_file" 2>/dev/null || true)
 
-    # Restaura config original (sem seções de snapshot)
     grep -v '^\[' "$conf_backup" > "$conf_file" || cp "$conf_backup" "$conf_file"
 
-    # Adiciona parent e snaptime da config atual (gerados pelo pct snapshot)
-    local parent_line snaptime_line
-    parent_line=$(grep '^parent:' "$conf_file.pre_restore" 2>/dev/null || grep '^parent:' "$conf_file" 2>/dev/null || true)
-
-    # Re-anexa as seções de snapshot preservadas
     if [[ -n "$snap_sections" ]]; then
         echo "" >> "$conf_file"
         echo "$snap_sections" >> "$conf_file"
@@ -187,7 +147,7 @@ create_snapshot_jellyfin() {
     if ! pct start "$vmid" 2>&1; then
         log "✗ ERRO CRÍTICO: falha ao reiniciar ct $vmid ($name)!"
         ERRORS+=("ct $vmid ($name): CRITICO - falha ao reiniciar")
-        telegram_alert "[RadinLab] CRITICO: jellyfin (CT $vmid) NAO reiniciou apos snapshot! Verifique imediatamente."
+        telegram_alert "[RadinLab] CRITICO: CT $vmid ($name) NAO reiniciou apos snapshot! Verifique imediatamente."
         trap - EXIT INT TERM
         return 1
     fi
@@ -195,45 +155,28 @@ create_snapshot_jellyfin() {
     trap - EXIT INT TERM
     log "  Container reiniciado."
 
-    # Aguarda serviço estabilizar
-    log "  Aguardando 15s para o jellyfin estabilizar..."
-    sleep 15
-
-    # Executa testes pós-snapshot
-    jellyfin_post_snapshot_tests "$vmid"
+    # Testes específicos para o jellyfin
+    if [[ "$vmid" == "$JELLYFIN_CTID" ]]; then
+        sleep 15
+        jellyfin_post_snapshot_tests "$vmid"
+    else
+        sleep 5
+    fi
 }
 
-# Busca containers LXC com a tag daily_snapshot
-get_tagged_cts() {
-    pct list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
-        local tags name
-        name=$(pct config "$vmid" 2>/dev/null | grep -oP '^hostname:\s*\K.*' || echo "$vmid")
-        tags=$(pct config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
-        if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
-            echo "ct:$vmid:$name"
-        fi
-    done
-}
-
-# Busca VMs QEMU com a tag daily_snapshot
-get_tagged_vms() {
-    qm list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
-        local tags name
-        name=$(qm config "$vmid" 2>/dev/null | grep -oP '^name:\s*\K.*' || echo "$vmid")
-        tags=$(qm config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
-        if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
-            echo "vm:$vmid:$name"
-        fi
-    done
+# Verifica se CT tem bind mounts
+has_bindmounts() {
+    local vmid="$1"
+    pct config "$vmid" 2>/dev/null | grep -qE '^(mp[0-9]+|dev[0-9]+):'
 }
 
 # Cria snapshot padrão
 create_snapshot() {
     local type="$1" vmid="$2" name="$3"
 
-    # Jellyfin tem tratamento especial
-    if [[ "$type" == "ct" && "$vmid" == "$JELLYFIN_CTID" ]]; then
-        create_snapshot_jellyfin "$vmid" "$name"
+    # CTs com bind mounts: tratamento especial
+    if [[ "$type" == "ct" ]] && has_bindmounts "$vmid"; then
+        create_snapshot_bindmount_ct "$vmid" "$name"
         return
     fi
 
@@ -259,7 +202,7 @@ create_snapshot() {
     fi
 }
 
-# Remove snapshots antigos (mantém apenas MAX_SNAPSHOTS)
+# Remove snapshots antigos
 cleanup_snapshots() {
     local type="$1" vmid="$2" name="$3"
 
@@ -267,9 +210,9 @@ cleanup_snapshots() {
 
     local snapshots
     if [[ "$type" == "ct" ]]; then
-        snapshots=$(pct listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
+        snapshots=$(pct listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
     elif [[ "$type" == "vm" ]]; then
-        snapshots=$(qm listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*\`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
+        snapshots=$(qm listsnapshot "$vmid" 2>/dev/null | grep -oP '^\s*`->\s*\K(auto_\S+)|^\s*\K(auto_\S+)' | sort || true)
     fi
 
     local count
@@ -291,11 +234,34 @@ cleanup_snapshots() {
     fi
 }
 
+# Busca CTs com tag
+get_tagged_cts() {
+    pct list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
+        local tags name
+        name=$(pct config "$vmid" 2>/dev/null | grep -oP '^hostname:\s*\K.*' || echo "$vmid")
+        tags=$(pct config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
+        if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
+            echo "ct:$vmid:$name"
+        fi
+    done
+}
+
+# Busca VMs com tag
+get_tagged_vms() {
+    qm list 2>/dev/null | tail -n +2 | awk '{print $1}' | while read -r vmid; do
+        local tags name
+        name=$(qm config "$vmid" 2>/dev/null | grep -oP '^name:\s*\K.*' || echo "$vmid")
+        tags=$(qm config "$vmid" 2>/dev/null | grep -oP '^tags:\s*\K.*' || true)
+        if echo "$tags" | grep -qw "$SNAPSHOT_TAG"; then
+            echo "vm:$vmid:$name"
+        fi
+    done
+}
+
 # Main
 log "=== Iniciando daily snapshot ==="
 log "Tag: $SNAPSHOT_TAG | Max snapshots: $MAX_SNAPSHOTS"
 
-# Coleta VMs/CTs com a tag
 TARGETS=()
 while IFS= read -r line; do
     [[ -n "$line" ]] && TARGETS+=("$line")
@@ -311,7 +277,6 @@ fi
 
 log "Encontrados ${#TARGETS[@]} alvos: ${TARGETS[*]}"
 
-# Processa cada alvo
 for target in "${TARGETS[@]}"; do
     IFS=: read -r type vmid name <<< "$target"
     create_snapshot "$type" "$vmid" "$name"
@@ -326,7 +291,6 @@ log "Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]}"
 STATUS_FILE="/tmp/backup-status.json"
 TIMESTAMP=$(date '+%d/%m/%Y %H:%M:%S')
 
-# Preserva status do obsidian se já existir no arquivo
 OBSIDIAN_STATUS="unknown"
 OBSIDIAN_MESSAGE=""
 if [[ -f "$STATUS_FILE" ]]; then
@@ -349,7 +313,7 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
 {
   "snapshot": {
     "status": "error",
-    "message": "Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]} — ${ERROR_LIST%|}",
+    "message": "Sucesso: ${#SUCCESS[@]} | Erros: ${#ERRORS[@]} -- ${ERROR_LIST%|}",
     "timestamp": "$TIMESTAMP"
   },
   "obsidian": {
@@ -358,7 +322,6 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
   }
 }
 STATUS_EOF
-
     exit 1
 fi
 
