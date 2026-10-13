@@ -65,7 +65,6 @@ do_backup() {
         --mode "$mode" \
         --compress zstd \
         --dumpdir "$dest_dir" \
-        --notes-template "{{guestname}} - backup semanal $(date '+%d/%m/%Y')" \
         2>&1); then
 
         # Valida arquivo criado
